@@ -1,0 +1,8 @@
+Package: @@PACKAGE@@
+Section: Proxmox
+Version: @@VERSION@@-@@PKGRELEASE@@
+Priority: optional
+Architecture: @@ARCH@@
+Maintainer: EnterpriseVE Support Team <support@enterpriseve.com>
+Description: EnterpriseVE Backup And Restore Ceph for Proxmox VE 
+ This package contains the EnterpriseVE Backup And Restore Ceph for Proxmox VE.
