@@ -1,5 +1,7 @@
 # eve4pve-barc
 Backup And Restore Ceph for Proxmox VE
+
+[More information about eve4pve-barc](http://www.enterpriseve.com/backup-and-restore-ceph-proxmox-ve/)
 ```
     ______      __                       _              _    ________
    / ____/___  / /____  _________  _____(_)_______     | |  / / ____/
@@ -42,14 +44,14 @@ Commands:
     restore              Will restore one time.
 
 Options:
-    --vmid=integer           The ID of the VM.
-    --label=string           Is usually 'hourly', 'daily', 'weekly', or 'monthly'.
-    --path=string            Path destination backup.
-    --keep=integer           Specify the number of backup which should will keep, 
-                             anything longer will be removed.
-    --script=string          Use specified hook script.
-                             Es. /usr/share/doc/eve4pve-barc/examples/script-hook.sh
-    --syslog                 Write messages into the system log.
+    --vmid=integer       The ID of the VM.
+    --label=string       Is usually 'hourly', 'daily', 'weekly', or 'monthly'.
+    --path=string        Path destination backup.
+    --keep=integer       Specify the number of backup which should will keep, 
+                         anything longer will be removed.
+    --script=string      Use specified hook script.
+                         Es. /usr/share/doc/eve4pve-barc/examples/script-hook.sh
+    --syslog             Write messages into the system log.
 
 Report bugs to <support@enterpriseve.com>. 
 ```

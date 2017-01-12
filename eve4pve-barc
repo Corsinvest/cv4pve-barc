@@ -89,14 +89,14 @@ Commands:
     restore              Will restore one time.
 
 Options:
-    --vmid=integer           The ID of the VM.
-    --label=string           Is usually 'hourly', 'daily', 'weekly', or 'monthly'.
-    --path=string            Path destination backup.
-    --keep=integer           Specify the number of backup which should will keep, 
-                             anything longer will be removed.
-    --script=string          Use specified hook script.
-                             Es. /usr/share/doc/$PROGNAME/examples/script-hook.sh
-    --syslog                 Write messages into the system log.
+    --vmid=integer       The ID of the VM.
+    --label=string       Is usually 'hourly', 'daily', 'weekly', or 'monthly'.
+    --path=string        Path destination backup.
+    --keep=integer       Specify the number of backup which should will keep, 
+                         anything longer will be removed.
+    --script=string      Use specified hook script.
+                         Es. /usr/share/doc/$PROGNAME/examples/script-hook.sh
+    --syslog             Write messages into the system log.
 
 Report bugs to <support@enterpriseve.com>. 
 EOF
