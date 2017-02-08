@@ -557,7 +557,7 @@ function merge_diff_backup(){
 
         #loop diff
         local export_diff=''
-        for export_diff in $(ls -r "$path_backup/"*$suffix_backup_file$EXT_DIFF); do
+        for export_diff in $(ls -r "$path_backup/"*$suffix_backup_file$EXT_DIFF 2>/dev/null); do
             if [ "$index" -ge "$opt_keep" ]; then            
                 if [ -z "$second_diff" ]; then
                     second_diff="$export_diff"
