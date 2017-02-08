@@ -1,7 +1,6 @@
 #!/bin/bash
 #
 # EnterpriseVE Backup And Restore Ceph for Proxmox VE hook script.
-
 # Process environment variables as received from and set by eve4pve-barc.
 
 hook() {
@@ -21,7 +20,6 @@ hook() {
         #backup job status
         backup-job-start);;
         backup-job-end);;
-        backup-job-abort);;
 
         #create snapshot
         snap-create-pre);;
@@ -41,9 +39,9 @@ hook() {
         #remove snapshot
         snap-remove-pre);;
         snap-remove-post);;
-        snap-remove-aboort);;
+        snap-remove-abort);;
 
-        *) echo "unknown phase '$phase'"; return 1;;
+        *) echo "unknown phase '$EVE4PVE_BARC_PHASE'"; return 1;;
     esac
 }
 

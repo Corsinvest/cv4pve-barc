@@ -3,41 +3,37 @@
 # EnterpriseVE Backup And Restore Ceph for Proxmox VE.
 # Author: Daniele Corsini <daniele.corsini@enterpriseve.com>
 
-declare -r VERSION=0.1.0
+declare -r VERSION=0.1.1
 declare -r NAME=$(basename "$0")
 declare -r PROGNAME=${NAME%.*}
 
 declare -r QEMU_CMD='qm'
+declare -r LXC_CMD='pct'
 
 declare -r PVE_DIR="/etc/pve"
+declare -r PVE_FIREWALL="$PVE_DIR/firewall"
 declare -r QEMU_CONF="$PVE_DIR/qemu-server"
 declare -r LXC_CONF="$PVE_DIR/lxc"
 
 declare -r EXT_IMAGE='.img'
 declare -r EXT_DIFF='.diff'
 declare -r EXT_CONF='.conf'
+declare -r EXT_FIREWALL='.fw'
 
-declare -i opt_vmid=0
+declare opt_vm_ids=''
 declare -i opt_keep=1
 declare -i opt_syslog=0
 declare -i opt_debug=0
 declare -i opt_dry_run=0
-opt_path_backup=''
-opt_label=''
-opt_script=''
+declare opt_path_backup=''
+declare opt_label=''
+declare opt_script=''
 
-pid_file=''
-snap_name_prefix=''
-path_backup=''
-
-#export for script hook
-export EVE4PVE_BARC_PHASE=
-export EVE4PVE_BARC_VMID=
-export EVE4PVE_BARC_PATH=
-export EVE4PVE_BARC_LABEL=
-export EVE4PVE_BARC_KEEP=
-export EVE4PVE_BARC_SNAP_NAME=
-export EVE4PVE_BARC_BACKUP_FILE=
+declare snap_name_prefix=''
+declare path_backup=''
+declare -i vm_id=0
+declare vm_tecnology=''
+declare -A vm_ids
 
 function usage(){
    shift
@@ -62,19 +58,19 @@ Usage:
     $PROGNAME help
     $PROGNAME version
  
-    $PROGNAME create  ---vmid=<integer> --label=<string> --path=<string> --keep=<integer>
+    $PROGNAME create  --vmid=<string> --label=<string> --path=<string> --keep=<integer>
                          --script=<string> --syslog 
-    $PROGNAME destroy --vmid=<integer> --label=<string>
-    $PROGNAME enable  --vmid=<integer> --label=<string>
-    $PROGNAME disable --vmid=<integer> --label=<string>
+    $PROGNAME destroy --vmid=<string> --label=<string>
+    $PROGNAME enable  --vmid=<string> --label=<string>
+    $PROGNAME disable --vmid=<string> --label=<string>
 
-    $PROGNAME backup  --vmid=<integer> --label=<string> --path=<string> --keep=<integer>
+    $PROGNAME backup  --vmid=<string> --label=<string> --path=<string> --keep=<integer>
                          --script=<string> --syslog 
-    $PROGNAME restore --vmid=<integer> --label=<string> --path=<string>
+    $PROGNAME restore --vmid=<string> --label=<string> --path=<string>
                          --script=<string> --syslog 
 
-    $PROGNAME status  --vmid=<integer> --label=<string> --path=<string>   
-    $PROGNAME clean   --vmid=<integer> --label=<string> --path=<string> --keep=<integer>
+    $PROGNAME status  --vmid=<string> --label=<string> --path=<string>   
+    $PROGNAME clean   --vmid=<string> --label=<string> --path=<string> --keep=<integer>
 
 Commands:
     version              Show version program.
@@ -89,11 +85,11 @@ Commands:
     restore              Will restore one time.
 
 Options:
-    --vmid=integer       The ID of the VM.
+    --vmid=string        The ID of the VM, comma separated (es. 100,101,102), 
+                         'all' for all known guest systems.
     --label=string       Is usually 'hourly', 'daily', 'weekly', or 'monthly'.
     --path=string        Path destination backup.
-    --keep=integer       Specify the number of backup which should will keep, 
-                         anything longer will be removed.
+    --keep=integer       Specify the number of backup which should will keep, Default 1.
     --script=string      Use specified hook script.
                          Es. /usr/share/doc/$PROGNAME/examples/script-hook.sh
     --syslog             Write messages into the system log.
@@ -109,17 +105,23 @@ function log(){
     shift 1
     local message=$*
 
-       case $level in
-        debug) [ $opt_debug = 1 ] && echo -e "Debug: $message";;
+    case $level in
+        debug) [ $opt_debug -eq 1 ] && echo -e "$(date "+%F %T") DEBUG: $message";;
         
         info) 
-            echo -e $message; 
-            [ $opt_syslog = 1 ] && logger -t "$PROGNAME" $message
+            echo -e "$message"; 
+            [ $opt_syslog -eq 1 ] && logger -t "$PROGNAME" "$message"
             ;;
         
-        error) echo Error: $message 1>&2;;
+        error)
+            echo "ERROR: $message" 1>&2
+            [ $opt_syslog -eq 1 ] && logger -t "$PROGNAME" -p daemon.err "$message"
+            ;;
 
-        *)  echo $message 1>&2;;
+        *)  
+            echo "$message" 1>&2
+            [ $opt_syslog -eq 1 ] && logger -t "$PROGNAME" "$message"
+            ;;
     esac
 }
 
@@ -127,23 +129,24 @@ function parse_opts(){
     local action=$1
     shift
 
-    local args=$(getopt \
-                --options "" \
-                --longoptions=path:,vmid:,label:,keep: \
-                --longoptions=script:,syslog,debug,dry-run \
-                --name "$PROGNAME" \
-                -- "$@") \
+    local args
+    args=$(getopt \
+           --options '' \
+           --longoptions=path:,vmid:,label:,keep: \
+           --longoptions=script:,syslog,debug,dry-run \
+           --name "$PROGNAME" \
+           -- "$@") \
            || exit 128
 
-    eval set -- $args
+    eval set -- "$args"
 
     while true; do    
       case "$1" in
-        --vmid) opt_vmid="$2"; shift 2;;
+        --vmid) opt_vm_ids=$2; shift 2;;
         --label) opt_label="$2"; shift 2;;
-        --keep) opt_keep="$2"; shift 2;;
+        --keep) opt_keep=$2; shift 2;;
         --path) opt_path_backup="$2"; shift 2;;
-		--script) opt_script="$2"; shift 2;;
+        --script) opt_script="$2"; shift 2;;
         --syslog) opt_syslog=1; shift;;
         --debug) opt_debug=1; shift;;
         --dry-run) opt_dry_run=1; shift;;
@@ -153,37 +156,44 @@ function parse_opts(){
     done
 
     [ ! -d "$opt_path_backup" ] && { log info "Path Backup is not set"; exit 1; }
-    [ $opt_vmid -le 0 ] && { log info "Vm id is not set"; exit 1; }
-    [ -z "$opt_label" ] && { log info "Label is not set correctly"; exit 1; }
+    [ -z "$opt_vm_ids" ] && { log info "VM id is not set."; exit 1; }
+    if [ "$opt_vm_ids" = "all" ]; then
+        #all VM/CT
+        vm_ids=$(echo "$(qm list | awk '{print $1}' | sed 1d) $(pct list | awk '{print $1}' | sed 1d)" | tr ' ' '\n')
+    else
+        #comma separated
+        vm_ids=$(echo "$opt_vm_ids" | tr ',' '\n')
+    fi
 
-    #creation backup path
-    path_backup="$opt_path_backup/barc/$opt_vmid/$opt_label"
-    mkdir -p "$path_backup" || { log error "Problem creation path '$path_backup'"; exit 1; }
+    [ -z "$opt_label" ] && { log info "Label is not set correctly"; exit 1; }
+    [ "$opt_keep" -le 0 ] && { log info "Keep is not set correctly. Value > 0."; exit 1; }
 
     snap_name_prefix="barc$opt_label"
 }
 
+function create_path(){
+    path_backup="$opt_path_backup/barc/$vm_id/$opt_label"
+    mkdir -p "$path_backup" || { log error "VM $vm_id - Problem creation path '$path_backup'"; return 1; }
+    return 0;
+}
+
 function get_tecnology(){
-    if [ ! -z $($QEMU_CMD list | awk '{print$1}' | grep $opt_vmid) ]; then 
-        #qemu
-        echo $QEMU_CMD
-    elif [ ! -z $(pct list | awk '{print$1}' | grep $opt_vmid) ]; then
-        #lxc
-        echo 'pct'
+    if $QEMU_CMD list | awk '{print $1}' | grep -q $vm_id; then 
+        vm_tecnology=$QEMU_CMD
+    elif $LXC_CMD list | awk '{print $1}' | grep -q $vm_id; then
+        vm_tecnology=$LXC_CMD
     else
-        #unknow
-        log info "Unknow teclonlogy for VM $opt_vmid"
-        exit 2;
+        log error "VM $vm_id - Unknown tecnology"
+        vm_tecnology=''
     fi
 }
 
 function cron_action_job(){
     local action=$1
-    shift
     parse_opts "$@"
 
     local -r cron_file="/etc/cron.d/$PROGNAME"    
-    local -r job_key_cron="backup --vmid=$opt_vmid --label='$opt_label' --path='$opt_path_backup'"
+    local -r job_key_cron="backup --vmid=$opt_vm_ids --label='$opt_label' --path='$opt_path_backup'"
     
     #create cron file if not exist
     if [ ! -e "$cron_file" ]; then
@@ -195,25 +205,23 @@ PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 EOL
     fi    
 
-    #check
-    local check=0; [ "$action" = "add" ] && check=1 
-    local line=$(grep -h "$job_key_cron" "$cron_file")  
-    if [ -z "$line" ]; then
-        [ $check -eq 0 ] && { log info "Job not exists in cron file '$cron_file'"; exit 1; }
-    else
+    local check=0; [ "$action" = "create" ] && check=1 
+    if grep -h "$job_key_cron" "$cron_file"; then
         [ $check -eq 1 ] && { log info "Job already exists in cron file '$cron_file'"; exit 1; }
+    else
+        [ $check -eq 0 ] && { log info "Job not exists in cron file '$cron_file'"; exit 1; }
     fi
 
     #action
     case $action in
-        add)
-            local cron_scheduling="0 0 * * *"
+        create)
+            local cron_scheduling="0 0 * * *"             #Default run once a day at midnight
 
             case "$opt_label" in
-                hourly*) cron_scheduling="0 * * * *";;  #Run once an hour at the beginning of the hour	
-                daily*) cron_scheduling="0 0 * * *";;   #Run once a day at midnight             
-                weekly*) cron_scheduling="0 0 * * 0";;  #Run once a week at midnight on Sunday morning	
-                monthly*) cron_scheduling="0 0 1 * *";; #Run once a month at midnight of the first day of the month
+                (*hourly*) cron_scheduling="0 * * * *";;  #Run once an hour at the beginning of the hour	
+                (*daily*) cron_scheduling="0 0 * * *";;   #Run once a day at midnight             
+                (*weekly*) cron_scheduling="0 0 * * 0";;  #Run once a week at midnight on Sunday morning	
+                (*monthly*) cron_scheduling="0 0 1 * *";; #Run once a month at midnight of the first day of the month
             esac
 
             local job="$cron_scheduling root $PROGNAME $job_key_cron --keep=$opt_keep"
@@ -224,7 +232,7 @@ EOL
             echo -e "$job" >> "$cron_file"
             ;;
 
-        remove) sed -i "\?$job_key_cron?d" "$cron_file";;
+        destroy) sed -i "\?$job_key_cron?d" "$cron_file";;
         enable) sed -i "\?$job_key_cron?s?^#??g" "$cron_file";;
         disable) sed -i "\?$job_key_cron?s?^?#?g" "$cron_file";;
     esac
@@ -232,259 +240,315 @@ EOL
     echo -e "Job $action in cron file '$cron_file'";
 }
 
-function create_pid_file(){
-    pid_file="/var/run/$PROGNAME_$opt_vmid.pid"
-
-    if [[ -e "$pid_file" ]]; then
-        local pid=$(cat ${pid_file})
-        ps -p $pid > /dev/null 2>&1
-        [ $? -eq 0 ] && { log info "Process already running with pid ${pid}"; exit 1; }
-    fi
-
-    echo $$ > $pid_file
-    [ $? -ne 0 ] && { log info "Could not create PID file $PIFDILE"; exit 1; }
-}
-
 function do_run(){
     local cmd=$*;
+    local -i rc=0;
 
     if [ $opt_dry_run -eq 1 ]; then
-		echo "$cmd"
-		rc="$?"
-	else
+        echo "$cmd"
+        rc=$?
+    else
         log debug "$cmd"
-		eval "$cmd"
-		rc="$?"
+        eval "$cmd"
+        rc=$?
         [ $rc != 0 ] && log error "$cmd"
-        log debug "exit $rc"
-	fi
+        log debug "return $rc"
+    fi
 
-	return "$rc"
+    return $rc
 }
 
 function clean(){
     parse_opts "$@"
 
-    local begin=$(date +%s)
+    local begin=$SECONDS
     log debug "$PROGNAME $VERSION"
-    log debug "Command line: $@"
+    log debug "Command line: $*"
 
-    call_hook_script "clean-job-start" "-"
-    merge_diff_backup
-    call_hook_script "clean-job-end" "-"
+    call_hook_script "clean-job-start" "-" "-"
 
-    log debug "Execution: $(($(date +%s)-begin)) sec."
+    for vm_id in $vm_ids; do
+        if ! create_path; then
+          continue;
+        fi
+
+        merge_diff_backup
+    done
+
+    vm_tecnology=''
+    vm_id=0
+
+    call_hook_script "clean-job-end" "-" "-"
+
+    log debug "Execution: $((SECONDS-begin)) sec."
 }
 
 function create_snapshot(){
     local snap="$1"
 
-    #qm agent $opt_vmid fsfreeze-freeze 
+    #qm agent $vm_id fsfreeze-freeze 
 
     call_hook_script "snap-create-pre" "$snap" "-"
-    log info "Creating snapshot $snap"
-    do_run "rbd snap create $snap"
-    do_run "rbd snap protect $snap"
+    log info "VM $vm_id - Creating snapshot $snap"
+
+    if ! do_run "rbd snap create $snap"; then    
+        call_hook_script "snap-create-abort" "$snap" "-"
+        return 1;
+    fi
+
+    if ! do_run "rbd snap protect $snap"; then    
+        call_hook_script "snap-create-abort" "$snap" "-"
+        return 1;
+    fi
+
     call_hook_script "snap-create-post" "$snap" "-"
 
-    #qm agent $opt_vmid fsfreeze-thaw 
+    #qm agent $vm_id fsfreeze-thaw 
 }
 
 function remove_snaphot(){
     local snap="$1"
     local hook="$2"
 
-    [ $hook -eq 1 ] && call_hook_script "snap-remove-pre" "$snap" "-"
-    log info "Remove snapshot $snap"
-    do_run "rbd snap unprotect $snap"
-    do_run "rbd snap rm $snap"
-    [ $hook -eq 1 ] && call_hook_script "snap-remove-post" "$snap" "-"
+    [ "$hook" -eq 1 ] && call_hook_script "snap-remove-pre" "$snap" "-"
+    log info "VM $vm_id - Remove snapshot $snap"
+    
+    if ! do_run "rbd snap unprotect $snap"; then    
+        [ "$hook" -eq 1 ] && call_hook_script "snap-remove-abort" "$snap" "-"
+        return 1;
+    fi
+    
+    if ! do_run "rbd snap rm $snap"; then    
+        [ "$hook" -eq 1 ] && call_hook_script "snap-remove-abort" "$snap" "-"
+        return 1;
+    fi
+
+    [ "$hook" -eq 1 ] && call_hook_script "snap-remove-post" "$snap" "-"
 }
 
 function call_hook_script(){
-    EVE4PVE_BARC_PHASE="$1"
-    EVE4PVE_BARC_SNAP_NAME="$2"
-    EVE4PVE_BARC_BACKUP_FILE="$3"
-    EVE4PVE_BARC_VMID=$opt_vmid
-    EVE4PVE_BARC_PATH="$opt_path_backup"
-    EVE4PVE_BARC_LABEL="$opt_label"
-    EVE4PVE_BARC_KEEP=$opt_keep
+    export EVE4PVE_BARC_PHASE="$1"
+    export EVE4PVE_BARC_SNAP_NAME="$2"
+    export EVE4PVE_BARC_BACKUP_FILE="$3"
+    export EVE4PVE_BARC_VMID=$vm_id
+    export EVE4PVE_BARC_VMTECNOLOGY=$vm_tecnology
+    export EVE4PVE_BARC_PATH="$opt_path_backup"
+    export EVE4PVE_BARC_LABEL="$opt_label"
+    export EVE4PVE_BARC_KEEP=$opt_keep
 
-    log debug "---------------------------------------------------" 
-    log debug "EVE4PVE_BARC_PHASE:       $EVE4PVE_BARC_PHASE" 
-    log debug "EVE4PVE_BARC_VMID:        $EVE4PVE_BARC_VMID" 
-    log debug "EVE4PVE_BARC_PATH:        $EVE4PVE_BARC_PATH" 
-    log debug "EVE4PVE_BARC_LABEL:       $EVE4PVE_BARC_LABEL" 
-    log debug "EVE4PVE_BARC_KEEP:        $EVE4PVE_BARC_KEEP" 
-    log debug "EVE4PVE_BARC_SNAP_NAME:   $EVE4PVE_BARC_SNAP_NAME" 
-    log debug "EVE4PVE_BARC_BACKUP_FILE: $EVE4PVE_BARC_BACKUP_FILE" 
-    log debug "---------------------------------------------------" 
+    log debug "-------------------------------------------------------" 
+    log debug "EVE4PVE_BARC_PHASE:          $EVE4PVE_BARC_PHASE" 
+    log debug "EVE4PVE_BARC_VMID:           $EVE4PVE_BARC_VMID" 
+    log debug "EVE4PVE_BARC_VMTECNOLOGY:    $EVE4PVE_BARC_VMTECNOLOGY" 
+    log debug "EVE4PVE_BARC_PATH:           $EVE4PVE_BARC_PATH" 
+    log debug "EVE4PVE_BARC_LABEL:          $EVE4PVE_BARC_LABEL" 
+    log debug "EVE4PVE_BARC_KEEP:           $EVE4PVE_BARC_KEEP" 
+    log debug "EVE4PVE_BARC_SNAP_NAME:      $EVE4PVE_BARC_SNAP_NAME" 
+    log debug "EVE4PVE_BARC_BACKUP_FILE:    $EVE4PVE_BARC_BACKUP_FILE" 
+    log debug "-------------------------------------------------------" 
 
     if [ -e "$opt_script" ]; then
-        log debug "Script hook: $opt_script" 
+        log debug "VM $vm_id - Script hook: $opt_script" 
         do_run "$opt_script"
     fi
+}
+
+function exit_file(){
+    for f in $1; do
+        ## Check if the glob gets expanded to existing files.
+        ## If not, f here will be exactly the pattern above
+        ## and the exists test will evaluate to false.
+        [ -e "$f" ] && return 0 || return 1
+        break
+    done
 }
 
 function backup(){
     parse_opts "$@"
 
-    local timestamp=$(date +%y%m%d%H%M%S)
-    local cmd=$(get_tecnology)
-    local cmd_config="$cmd config $opt_vmid"
-    local path_config=
+    local timestamp; timestamp=$(date +%y%m%d%H%M%S)
 
-    case $cmd in
-        $QEMU_CMD) 
-            path_config=$QEMU_CONF; 
-            cmd_config="$cmd_config -current"
-            [ -z "$($cmd_config | grep 'agent: 1')" ] && log info "VM $opt_vmid consider enabling QEMU agent see https://pve.proxmox.com/wiki/Qemu-guest-agent"        
-            ;;
+    #create pid file
+    local pid_file="/var/run/$PROGNAME.pid"
+    if [[ -e "$pid_file" ]]; then
+        local pid; pid=$(cat "${pid_file}")
+        if ps -p "$pid" > /dev/null 2>&1; then
+          log error "Process already running with pid ${pid}"
+          exit 1
+        fi
+    fi
 
-        pct) path_config=$LXC_CONF;;
-    esac
+    if ! echo $$ > "$pid_file"; then
+        log error "Could not create PID file $pid_file"
+        exit 1
+    fi
 
-    create_pid_file
-  
     call_hook_script "backup-job-start" "-" "-"
 
-    #disks available for vm/ct
-    #exclude no backup
-    local disks=$($cmd_config | \
-                  grep -P '^(?:((?:virtio|ide|scsi|sata|mp)\d+)|rootfs): ' | \
-                  grep -v -P 'cdrom|none' | \
-                  grep -v -P 'backup=0' | \
-                  awk '{ split($0,a,","); split(a[1],b," "); print b[2]}')
-
-    #decode disk
-    for disk in $disks; do
-        #check rbd device  image-spec is pool-name/image-name
-        local image_spec=$(pvesm path $disk | grep '^/dev/rbd/' | sed -e "s/^\/dev\/rbd\///")
+    for vm_id in $vm_ids; do         
+        get_tecnology
+        [ -z "$vm_tecnology" ] && continue;
         
-        #not rbd device
-        [ -z "$image_spec" ] && continue 
+        local cmd_config="$vm_tecnology config $vm_id"
+        local path_config=''
 
-        #pool-name/image-name@snap-name
-        local current_snap="$image_spec@$snap_name_prefix$timestamp"
+        case $vm_tecnology in
+            $QEMU_CMD) 
+                path_config=$QEMU_CONF; 
+                cmd_config="$cmd_config -current"
+                if ! $cmd_config | grep -q 'agent: 1'; then
+                    log info "VM $vm_id consider enabling QEMU agent see https://pve.proxmox.com/wiki/Qemu-guest-agent"        
+                fi
+                ;;
 
-        #es 170108103440.storage-rbd.vm-103-disk-1
-        local suffix_backup_file=".$(echo $image_spec | sed 's#/#.#g')"
-        local backup_file="$path_backup/$timestamp$suffix_backup_file"
+            $LXC_CMD) path_config=$LXC_CONF;;
+        esac
 
-        #check exist initial export
-        if [ ! -e "$path_backup/"*$suffix_backup_file$EXT_IMAGE ]; then
-            #initial export not exit            
-            backup_file="$backup_file$EXT_IMAGE"
-            
-            create_snapshot "$current_snap"
-
-            #export initial
-            call_hook_script "export-pre" "$current_snap" "$backup_file"
-
-            do_run "rbd export --rbd-concurrent-management-ops 20 $current_snap '$backup_file'"
-            if [ $? != 0 ]; then
-                remove_snaphot "$current_snap" 0
-
-                call_hook_script "export-abort" "$current_snap" "$backup_file"
-                call_hook_script "backup-job-abort" "-" "-"
-
-                log info "Remove file '$backup_file'"
-                rm -f "$backup_file"
-            
-                end_backup
-                exit 4;
-            fi
-
-            call_hook_script "export-post" "$current_snap" "$backup_file"
-
-        else
-            #incremental backup
-            backup_file="$backup_file$EXT_DIFF"
-
-            #find last snapshot in ceph
-            local latest_snap=$(rbd snap ls $image_spec | \
-                                awk '{print $2}' | \
-                                grep "$opt_label" | sort -r | head -n 1)
-
-            #verify exist last snapshot ceph in file backup
-            #timestamp last snapshot
-            local tms_latest_snap=$(echo "$latest_snap" | \
-                                    awk -v prf="$snap_name_prefix" '{print substr($1,length(prf)+1)}')
-
-            if [ ! -e "$path_backup/"$tms_latest_snap$suffix_backup_file.* ]; then
-                log error "Ceph snapshot '$image_spec@$latest_snap' not found in backup '$path_backup/$tms_latest_snap$suffix_backup_file.*'";                
-                
-                call_hook_script "backup-job-abort" "-" "-"                 
-                
-                end_backup
-                exit 5;
-            fi
-
-            #verify exist last backup in ceph snapshot
-            local latest_backup=$(ls -r "$path_backup/"*$suffix_backup_file.* | \
-                                  head -n 1 | \
-                                  xargs -n 1 basename | \
-                                  awk '{print substr($1,1,12)}')
-
-            latest_backup="$snap_name_prefix$latest_backup"
-
-            if [ -z $(rbd snap ls "$image_spec" | awk '{print $2}' | grep "$latest_backup") ]; then
-                log error "Backup '$latest_backup' not found in ceph '$image_spec' snapshot!";
-                
-                call_hook_script "backup-job-abort" "-" "-"                
-                
-                end_backup
-                exit 6;
-            fi
-            
-            create_snapshot "$current_snap"
-
-            #export-diff difference previus snapshot 
-            call_hook_script "export-diff-pre" "$current_snap" "$backup_file"
-
-            do_run "rbd export-diff --from-snap $latest_snap $current_snap '$backup_file'"
-            if [ $? != 0 ]; then
-                remove_snaphot "$current_snap" 0
-
-                call_hook_script "export-diff-abort" "$current_snap" "$backup_file"
-                call_hook_script "backup-job-abort" "-" "-"
-
-                log info "Remove file '$backup_file'"
-                rm -f "$backup_file"
-                
-                end_backup
-                exit 7;
-            fi
-
-            call_hook_script "export-diff-post" "$current_snap" "$backup_file"
-
-            #remove previus snapshot
-            remove_snaphot "$image_spec@$latest_snap" 1
+        if ! create_path; then
+            continue
         fi
+
+        #disks available for vm/ct
+        #exclude no backup
+        local disks;
+        disks=$($cmd_config | \
+                grep -P '^(?:((?:virtio|ide|scsi|sata|mp)\d+)|rootfs): ' | \
+                grep -v -P 'cdrom|none' | \
+                grep -v -P 'backup=0' | \
+                awk '{ split($0,a,","); split(a[1],b," "); print b[2]}')
+   
+        #decode disk
+        local disk=''
+        for disk in $disks; do
+            #check rbd device  image-spec is pool-name/image-name
+            local image_spec; 
+            image_spec=$(pvesm path "$disk" | grep 'ceph' | awk '{ split($0,a,":"); print a[2]}')
+            
+            #not rbd device
+            [ -z "$image_spec" ] && continue 
+
+            #pool-name/image-name@snap-name
+            local current_snap="$image_spec@$snap_name_prefix$timestamp"
+
+            local suffix_backup_file=${image_spec//\//.} # ".$(echo "$image_spec" | sed 's#/#.#g')"
+            local backup_file="$path_backup/$timestamp$suffix_backup_file"
+
+            #check exist initial export
+            if ! exit_file "$path_backup/*$suffix_backup_file$EXT_IMAGE"; then
+                #initial export not exist            
+                backup_file="$backup_file$EXT_IMAGE"
+                
+                if ! create_snapshot "$current_snap"; then
+                    break;
+                fi
+
+                #export initial
+                call_hook_script "export-pre" "$current_snap" "$backup_file"
+
+                if ! do_run "rbd export --rbd-concurrent-management-ops 20 $current_snap '$backup_file'"; then
+                    remove_snaphot "$current_snap" 0
+
+                    call_hook_script "export-abort" "$current_snap" "$backup_file"
+
+                    log info "VM $vm_id - Remove file '$backup_file'"
+                    rm -f "$backup_file"
+
+                    break;
+                fi
+
+                call_hook_script "export-post" "$current_snap" "$backup_file"
+
+            else
+                #incremental backup
+                backup_file="$backup_file$EXT_DIFF"
+
+                #find last snapshot in ceph
+                local latest_snap
+                latest_snap=$(rbd snap ls "$image_spec" | \
+                              awk '{print $2}' | \
+                              grep "$opt_label" | sort -r | head -n 1)
+
+                #verify exist last snapshot ceph in file backup
+                #timestamp last snapshot
+                local tms_latest_snap
+                tms_latest_snap=$(echo "$latest_snap" | \
+                                  awk -v prf="$snap_name_prefix" '{print substr($1,length(prf)+1)}')
+
+                if ! exit_file "$path_backup/$tms_latest_snap$suffix_backup_file.*"; then
+                    log error "VM $vm_id - Ceph snapshot '$image_spec@$latest_snap' not found in backup '$path_backup/$tms_latest_snap$suffix_backup_file.*'";                    
+                    call_hook_script "export-diff-abort" "-" "-"                 
+                    break;
+                fi
+
+                #verify exist last backup in ceph snapshot
+                local latest_backup
+                latest_backup=$(ls -r "$path_backup/"*$suffix_backup_file.* | \
+                                head -n 1 | \
+                                xargs -n 1 basename | \
+                                awk '{print substr($1,1,12)}')
+
+                latest_backup="$snap_name_prefix$latest_backup"
+
+                if ! rbd snap ls "$image_spec" | awk '{print $2}' | grep -q "$latest_backup"; then
+                    log error "VM $vm_id - Backup '$latest_backup' not found in ceph '$image_spec' snapshot!";                    
+                    call_hook_script "export-diff-abort" "-" "-"                
+                    break;
+                fi
+                
+                if ! create_snapshot "$current_snap"; then
+                  break;
+                fi
+
+                #export-diff difference previus snapshot 
+                call_hook_script "export-diff-pre" "$current_snap" "$backup_file"
+
+                if ! do_run "rbd export-diff --from-snap $latest_snap $current_snap '$backup_file'"; then
+                    remove_snaphot "$current_snap" 0
+
+                    call_hook_script "export-diff-abort" "$current_snap" "$backup_file"
+
+                    log info "VM $vm_id - Remove file '$backup_file'"
+                    rm -f "$backup_file"
+                    
+                    break;
+                fi
+
+                call_hook_script "export-diff-post" "$current_snap" "$backup_file"
+
+                #remove previus snapshot
+                remove_snaphot "$image_spec@$latest_snap" 1
+            fi
+        done
+        
+        #copy config files
+        log info "VM $vm_id - Copy config"
+        do_run "cp '$path_config/$vm_id$EXT_CONF' '$path_backup/$timestamp$EXT_CONF'"
+
+        #copy firewall files
+        local file_firewall="$PVE_FIREWALL/$vm_id$EXT_FIREWALL"
+        if [ -e "$file_firewall" ]; then
+            log info "VM $vm_id - Copy firewall"
+            do_run "cp '$file_firewall' '$path_backup/$timestamp$EXT_FIREWALL'"
+        fi
+
+        merge_diff_backup
     done
 
-    #copy config files
-    log info "Copy config"
-    do_run "cp '$path_config/$opt_vmid$EXT_CONF' '$path_backup/$timestamp$EXT_CONF'"
+    vm_tecnology=''
+    vm_id=0
 
-    merge_diff_backup
+    rm "$pid_file"
 
-    call_hook_script "backup-job-end" "-" "-"
-
-    end_backup
-}
-
-function end_backup(){
-    rm $pid_file    
+    call_hook_script "backup-job-end" "-" "-"        
 }
 
 function merge_diff_backup(){
-    [ $opt_keep -eq -1 ] && return;       #disable remove
-    [ $opt_keep -le 0 ] && opt_keep=1;    #minimum one backup equal to snapshot
-
     #loop all image
-    for image in $(ls "$path_backup/"*$EXT_IMAGE | xargs -n 1 basename); do
-        local suffix_backup_file=$(echo $image | awk '{print substr($1,13)}' )
+    local image=''
+    for image in $path_backup/*$EXT_IMAGE; do
+        image=$(basename "$image")
+       
+        local suffix_backup_file=${image:12}        
         suffix_backup_file=${suffix_backup_file%.*}
 
         local first_diff=''
@@ -492,6 +556,7 @@ function merge_diff_backup(){
         local -i index=1
 
         #loop diff
+        local export_diff=''
         for export_diff in $(ls -r "$path_backup/"*$suffix_backup_file$EXT_DIFF); do
             if [ "$index" -ge "$opt_keep" ]; then            
                 if [ -z "$second_diff" ]; then
@@ -500,32 +565,35 @@ function merge_diff_backup(){
                     first_diff="$export_diff"
                     merged_diff="$second_diff-merged"
 
-                    log info "Merge diff backup '$(basename $first_diff)' '$(basename $second_diff)'"
+                    log info "VM $vm_id - Merge diff backup '$(basename "$first_diff")' '$(basename "$second_diff")'"
 
-                    do_run "rbd merge-diff '$first_diff' '$second_diff' '$merged_diff'"
-                    if [ $? = 0 ]; then
+                    if do_run "rbd merge-diff '$first_diff' '$second_diff' '$merged_diff'"; then
                         #ok result
-                        log info "Removing backup '$first_diff'"; 
+                        log info "VM $vm_id - Removing backup '$first_diff'"; 
                         do_run "rm '$first_diff'"
                         
-                        log info "Removing backup '$second_diff'"
+                        log info "VM $vm_id - Removing backup '$second_diff'"
                         do_run "rm '$second_diff'"    
 
                         #rename new merge in second_diff
                         do_run "mv '$merged_diff' '$second_diff'"
 
                         #remove config
-                        local tms_first_diff=$(basename $first_diff | awk '{print substr($1,1,12)}') 
-                        do_run "rm '$path_backup/$tms_first_diff$EXT_CONF'"
+                        local tms_first_diff; tms_first_diff=$(basename "$first_diff" | awk '{print substr($1,1,12)}') 
+                        do_run "rm -f '$path_backup/$tms_first_diff$EXT_CONF'"
+
+                        #remove firewall
+                        local file_firewall="$path_backup/$tms_first_diff$EXT_FIREWALL"
+                        [ -e "$file_firewall" ] && do_run "rm '$file_firewall'"
                     
                         first_diff=''
                         second_diff=''                      
                     else    
                         #Error
-                        log error "Merge diff backup '$(basename $first_diff)' '$(basename $second_diff)' to '$(basename $merged_diff)'"
+                        log error "VM $vm_id - Merge diff backup '$(basename $first_diff)' '$(basename $second_diff)' to '$(basename "$merged_diff")'"
                         do_run "rm -f $merged_diff"
 
-                        return 10
+                        return 1
                     fi
                 fi
             fi
@@ -538,89 +606,106 @@ function merge_diff_backup(){
 function restore(){
     parse_opts "$@"
 
-    local title="EnterpriseVE Backup and Restore Ceph for Proxmox VE"
-
-    #list all immge available 
-    read -ra images <<<$(ls "$path_backup/"*$EXT_IMAGE | \
-                         xargs -n 1 basename | \
-                         awk '{printf "%s %s\n",substr($1,14,length($1)-14+1-4),substr($1,14,length($1)-14+1-4)}')
-
-    #select image to recovery
-    local image=$(whiptail --title "$title" \
-                  --menu "Choose from available images:" \
-                  --notags 25 60 14 "${images[@]}" 3>&1 1>&2 2>&3)
-
-    [ -z "$image" ] && exit 1
-
-    #list all date available 
-    read -ra timestamps <<<$(ls -r "$path_backup/"*$image* | \
-                             xargs -n 1 basename | \
-                             awk '{print substr($1,1,12),substr($1,1,12)}' | \
-                             awk 'BEGIN {FIELDWIDTHS="13 2 2 2 2 2 2"} {printf "%s %s-%s-%s_%s:%s:%s\n",$1,$2,$3,$4,$5,$6,$7}') 
-
-    #select timestamp
-    local timestamp=$(whiptail --title "$title" \
-                      --menu "Choose from available date [$image]:" \
-                      --notags 25 60 14 "${timestamps[@]}" 3>&1 1>&2 2>&3)
-
-    [ -z "$timestamp" ] && exit 1
-
-    #list all ppols 
-    read -ra pools <<<$(rados lspools | awk '{printf "%s %s\n",$1,$1}') 
-
-    #select timestamp
-    local pool_name=$(whiptail --title "$title" \
-                      --menu "Choose from available Ceph pools:" \
-                      --notags 25 60 14 "${pools[@]}" 3>&1 1>&2 2>&3)
-
-    [ -z "$pool_name" ] && exit 1
-
-    while true; do
-        #name_import
-        local name_import=$(whiptail --title "$title" \
-                            --inputbox "Specify image name import" 8 78 \
-                            $(echo $image | awk '{ split($0,a,"."); print a[2]}') 3>&1 1>&2 2>&3)
-             
-        [ -z "$name_import" ] && exit 1    
-        if [ -z "$(rbd ls $pool_name | grep $name_import)" ]; then
-            break;
-        else
-            whiptail --title "$title" --msgbox "Image $pool_name/$name_import exist!" 8 78
+    for vm_id in $vm_ids; do
+        if ! create_path; then
+          continue;
         fi
-    done
-
-    if !(whiptail --title "$title" --yesno "Confrim restore $image in $pool_name/$name_import?" 8 78) then
-        exit 1
-    fi
-
-    log info "Start restore process"    
-
-    for backup in $(ls "$path_backup/"*$image*); do
-        if [[ $backup == *".img" ]]; then
-            #initial import 
-            log info "Inital import $(basename $backup)"                
-            do_run "rbd import '$backup' $pool_name/$name_import"
-
-            #create initlal snap name
-            local timestamp_snap=$(basename "$backup" | awk '{print substr($1,1,12)}')
-            local snap_name_restore="$snap_name_prefix$timestamp_snap"
-            do_run "rbd snap create $pool_name/$name_import@$snap_name_restore"
         
-        else
-            #differential
-            log info "Differential $backup"
-            do_run "rbd import-diff '$backup' $pool_name/$name_import"
-
+        if ! create_path; then
+            exit 1
         fi
 
-        [[ $backup == "$path_backup/$timestamp.$image"* ]] && break;        
-    done     
+        local title="EnterpriseVE Backup and Restore Ceph for Proxmox VE"
 
-    #remove all snapshots
-    do_run "rbd snap purge $pool_name/$name_import"
+        #list all immge available 
+        read -ra images <<<$(ls "$path_backup/"*$EXT_IMAGE | \
+                            xargs -n 1 basename | \
+                            awk '{printf "%s %s\n",substr($1,13,length($1)-16),substr($1,13,length($1)-16)}')
 
-    log info "Backup $image restored in $pool_name/$name_import with success!"    
-    log info "Consider to manually create VM/CT and change config file from backup adapting restored image."    
+        #select image to recovery
+        local image;
+        image=$(whiptail --title "$title" \
+                --menu "Choose from available images:" \
+                --notags 25 60 14 "${images[@]}" 3>&1 1>&2 2>&3)
+
+        [ -z "$image" ] && exit 1
+
+        #list all date available 
+        read -ra timestamps <<<$(ls -r "$path_backup/"*$image* | \
+                                xargs -n 1 basename | \
+                                awk '{print substr($1,1,12),substr($1,1,12)}' | \
+                                awk 'BEGIN {FIELDWIDTHS="13 2 2 2 2 2 2"} {printf "%s %s-%s-%s_%s:%s:%s\n",$1,$2,$3,$4,$5,$6,$7}') 
+
+        #select timestamp
+        local timestamp
+        timestamp=$(whiptail --title "$title" \
+                    --menu "Choose from available date [$image]:" \
+                    --notags 25 60 14 "${timestamps[@]}" 3>&1 1>&2 2>&3)
+
+        [ -z "$timestamp" ] && exit 1
+
+        #list all ppols 
+        read -ra pools <<<$(rados lspools | awk '{printf "%s %s\n",$1,$1}') 
+
+        #select timestamp
+        local pool_name; 
+        pool_name=$(whiptail --title "$title" \
+                    --menu "Choose from available Ceph pools:" \
+                    --notags 25 60 14 "${pools[@]}" 3>&1 1>&2 2>&3)
+
+        [ -z "$pool_name" ] && exit 1
+
+        while true; do
+            #name_import
+            local name_import; 
+            name_import=$(whiptail --title "$title" \
+                        --inputbox "Specify image name import" 8 78 \
+                        "$(echo "$image" | awk '{ split($0,a,"."); print a[2]}')" 3>&1 1>&2 2>&3)
+                
+            [ -z "$name_import" ] && exit 1    
+            if ! rbd ls "$pool_name" | grep -q "$name_import"; then
+                break;
+            else
+                whiptail --title "$title" --msgbox "Image $pool_name/$name_import exist!" 8 78
+            fi
+        done
+
+        if ! whiptail --title "$title" --yesno "Confrim restore $image in $pool_name/$name_import?" 8 78; then
+            exit 1
+        fi
+
+        log info "Start restore process"    
+
+        local backup=''
+        for backup in $path_backup/*$image*; do
+            if [[ $backup == *".img" ]]; then
+                #initial import 
+                log info "Inital import $(basename "$backup")"                
+                do_run "rbd import '$backup' $pool_name/$name_import"
+
+                #create initlal snap name
+                local timestamp_snap; timestamp_snap=$(basename "$backup" | awk '{print substr($1,1,12)}')
+                local snap_name_restore="$snap_name_prefix$timestamp_snap"
+                do_run "rbd snap create $pool_name/$name_import@$snap_name_restore"
+            
+            else
+                #differential
+                log info "Differential $backup"
+                do_run "rbd import-diff '$backup' $pool_name/$name_import"
+
+            fi
+
+            [[ $backup == "$path_backup/$timestamp.$image"* ]] && break;        
+        done     
+
+        #remove all snapshots
+        do_run "rbd snap purge $pool_name/$name_import"
+
+        log info "Backup $image restored in $pool_name/$name_import with success!"    
+        log info "Consider to manually create VM/CT and change config file from backup adapting restored image."    
+
+        break;
+    done
 }
 
 function status(){
@@ -628,42 +713,48 @@ function status(){
 
     local print_header=1
 
-    local images=$(ls "$path_backup/"*$EXT_IMAGE | \
-                   xargs -n 1 basename | \
-                   awk '{print substr($1,14,length($1)-14+1-4)}')
-
-    for image in $images; do
-        local result=$(ls "$path_backup/"*$image* | \
-                       xargs -n 1 basename | \
-                       awk '{ split($0,a,".");  print substr(a[4]" ",1,4),substr($1,1,12),substr($1,14,length($1)-14-length(a[4]))}' | \
-                       awk 'BEGIN {FIELDWIDTHS="5 2 2 2 2 2 2 50"} {printf "%s %s-%s-%s %s:%s:%s %s\n",$1,$2,$3,$4,$5,$6,$7,$8}')
-
-        if [ ! -z "$result" ]; then
-            if [ $print_header -eq 1 ]; then
-                print_header=0
-                echo "TYPE  BACKUP             IMAGE"
-            fi
-
-            echo "${result}"
+    for vm_id in $vm_ids; do
+        if ! create_path; then
+          continue;
         fi
+
+        local image=''
+        for image in $path_backup/*$EXT_IMAGE; do
+            [ ! -e "$image" ] && continue
+
+            image=$(basename "$image")
+            image=${image:12:${#image}-12-4}
+
+            local result
+            result=$(ls "$path_backup/"*$image* | \
+                     xargs -n 1 basename | \
+                     awk -v vmid="$vm_id" '{ split($0,a,"."); print vmid,substr(a[3]" ",1,4),substr($1,1,12),substr($1,13,length($1)-13-length(a[3]))}' | \
+                     awk 'BEGIN {FIELDWIDTHS="4 5 2 2 2 2 2 2 50"} {printf "%s %s %s-%s-%s %s:%s:%s %s\n",$1,$2,$3,$4,$5,$6,$7,$8,$9}')
+
+            if [ ! -z "$result" ]; then
+                if [ $print_header -eq 1 ]; then
+                    print_header=0
+                    echo "VM   TYPE  BACKUP             IMAGE"
+                fi
+
+                echo "${result}"
+            fi
+        done
     done
 }
 
 function main(){    
-    [ $# == 0 -o $? != 0 ] && usage;
+    [ $# = 0 ] && usage;
 
     #command
     case "$1" in
         version) echo "$VERSION";;
         help) usage "$@";;
+        create|destroy|enable|disable) cron_action_job "$@";;
         backup) backup "$@";; 
         restore) restore "$@";;       
         clean) clean "$@";;
         status) status "$@";; 
-        create) cron_action_job add "$@";;
-        destroy) cron_action_job remove "$@";;
-        enable) cron_action_job enable "$@";;
-        disable) cron_action_job disable "$@";;
         *) usage;;
     esac
 

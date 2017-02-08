@@ -2,6 +2,12 @@
 Backup And Restore Ceph for Proxmox VE
 
 [More information about eve4pve-barc](http://www.enterpriseve.com/backup-and-restore-ceph-proxmox-ve/)
+
+Ceph Documentation
+
+[Incremental snapshots with rbd](http://ceph.com/dev-notes/incremental-snapshots-with-rbd/)
+
+[rdb – manage rados block device (rbd) images](http://docs.ceph.com/docs/master/man/8/rbd/)
 ```
     ______      __                       _              _    ________
    / ____/___  / /____  _________  _____(_)_______     | |  / / ____/
@@ -17,19 +23,19 @@ Usage:
     eve4pve-barc help
     eve4pve-barc version
  
-    eve4pve-barc create  ---vmid=<integer> --label=<string> --path=<string> --keep=<integer>
+    eve4pve-barc create  --vmid=<string> --label=<string> --path=<string> --keep=<integer>
                          --script=<string> --syslog 
-    eve4pve-barc destroy --vmid=<integer> --label=<string>
-    eve4pve-barc enable  --vmid=<integer> --label=<string>
-    eve4pve-barc disable --vmid=<integer> --label=<string>
+    eve4pve-barc destroy --vmid=<string> --label=<string>
+    eve4pve-barc enable  --vmid=<string> --label=<string>
+    eve4pve-barc disable --vmid=<string> --label=<string>
 
-    eve4pve-barc backup  --vmid=<integer> --label=<string> --path=<string> --keep=<integer>
+    eve4pve-barc backup  --vmid=<string> --label=<string> --path=<string> --keep=<integer>
                          --script=<string> --syslog 
-    eve4pve-barc restore --vmid=<integer> --label=<string> --path=<string>
+    eve4pve-barc restore --vmid=<string> --label=<string> --path=<string>
                          --script=<string> --syslog 
 
-    eve4pve-barc status  --vmid=<integer> --label=<string> --path=<string>   
-    eve4pve-barc clean   --vmid=<integer> --label=<string> --path=<string> --keep=<integer>
+    eve4pve-barc status  --vmid=<string> --label=<string> --path=<string>   
+    eve4pve-barc clean   --vmid=<string> --label=<string> --path=<string> --keep=<integer>
 
 Commands:
     version              Show version program.
@@ -44,11 +50,11 @@ Commands:
     restore              Will restore one time.
 
 Options:
-    --vmid=integer       The ID of the VM.
+    --vmid=string        The ID of the VM, comma separated (es. 100,101,102), 
+                         'all' for all known guest systems.
     --label=string       Is usually 'hourly', 'daily', 'weekly', or 'monthly'.
     --path=string        Path destination backup.
-    --keep=integer       Specify the number of backup which should will keep, 
-                         anything longer will be removed.
+    --keep=integer       Specify the number of backup which should will keep, Default 1.
     --script=string      Use specified hook script.
                          Es. /usr/share/doc/eve4pve-barc/examples/script-hook.sh
     --syslog             Write messages into the system log.
@@ -68,6 +74,8 @@ In backup export image and config file VM/CT.
 * Syslog integration
 * Multiple schedule VM using --label (es. daily,monthly)
 * Hook script
+* Multiple VM single execution
+* Copy config and firewall files 
 
 # Configuration and use
 Download package eve4pve-barc_?.?.?-?_all.deb, on your Proxmox VE host and install:
