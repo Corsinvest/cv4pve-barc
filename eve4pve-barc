@@ -3,17 +3,14 @@
 # EnterpriseVE Backup And Restore Ceph for Proxmox VE.
 # Author: Daniele Corsini <daniele.corsini@enterpriseve.com>
 
-declare -r VERSION=0.1.1
+declare -r VERSION=0.1.2
 declare -r NAME=$(basename "$0")
 declare -r PROGNAME=${NAME%.*}
 
-declare -r QEMU_CMD='qm'
-declare -r LXC_CMD='pct'
-
 declare -r PVE_DIR="/etc/pve"
 declare -r PVE_FIREWALL="$PVE_DIR/firewall"
-declare -r QEMU_CONF="$PVE_DIR/qemu-server"
-declare -r LXC_CONF="$PVE_DIR/lxc"
+declare -r QEMU_CONF="$PVE_DIR/nodes/*/qemu-server"
+declare -r LXC_CONF="$PVE_DIR/nodes/*/lxc"
 
 declare -r EXT_IMAGE='.img'
 declare -r EXT_DIFF='.diff'
@@ -32,7 +29,6 @@ declare opt_script=''
 declare snap_name_prefix=''
 declare path_backup=''
 declare -i vm_id=0
-declare vm_tecnology=''
 declare -A vm_ids
 
 function usage(){
@@ -158,8 +154,28 @@ function parse_opts(){
     [ ! -d "$opt_path_backup" ] && { log info "Path Backup is not set"; exit 1; }
     [ -z "$opt_vm_ids" ] && { log info "VM id is not set."; exit 1; }
     if [ "$opt_vm_ids" = "all" ]; then
-        #all VM/CT
-        vm_ids=$(echo "$(qm list | awk '{print $1}' | sed 1d) $(pct list | awk '{print $1}' | sed 1d)" | tr ' ' '\n')
+        vm_ids=''
+        local conf=''
+
+        #VM
+        for conf in $QEMU_CONF/*$EXT_CONF; do
+            [ ! -e "$conf" ] && break
+
+            conf=$(basename "$conf")
+            [ "$vm_ids" != '' ] && vm_ids="$vm_ids,"
+            vm_ids="$vm_ids${conf%.*}"
+        done
+
+        #CT
+        for conf in $LXC_CONF/*$EXT_CONF; do
+            [ ! -e "$conf" ] && break
+
+            conf=$(basename "$conf")
+            [ "$vm_ids" != '' ] && vm_ids="$vm_ids,"
+            vm_ids="$vm_ids${conf%.*}"
+        done
+
+        vm_ids=$(echo "$vm_ids" | tr ',' '\n')
     else
         #comma separated
         vm_ids=$(echo "$opt_vm_ids" | tr ',' '\n')
@@ -175,17 +191,6 @@ function create_path(){
     path_backup="$opt_path_backup/barc/$vm_id/$opt_label"
     mkdir -p "$path_backup" || { log error "VM $vm_id - Problem creation path '$path_backup'"; return 1; }
     return 0;
-}
-
-function get_tecnology(){
-    if $QEMU_CMD list | awk '{print $1}' | grep -q $vm_id; then 
-        vm_tecnology=$QEMU_CMD
-    elif $LXC_CMD list | awk '{print $1}' | grep -q $vm_id; then
-        vm_tecnology=$LXC_CMD
-    else
-        log error "VM $vm_id - Unknown tecnology"
-        vm_tecnology=''
-    fi
 }
 
 function cron_action_job(){
@@ -275,7 +280,6 @@ function clean(){
         merge_diff_backup
     done
 
-    vm_tecnology=''
     vm_id=0
 
     call_hook_script "clean-job-end" "-" "-"
@@ -331,7 +335,6 @@ function call_hook_script(){
     export EVE4PVE_BARC_SNAP_NAME="$2"
     export EVE4PVE_BARC_BACKUP_FILE="$3"
     export EVE4PVE_BARC_VMID=$vm_id
-    export EVE4PVE_BARC_VMTECNOLOGY=$vm_tecnology
     export EVE4PVE_BARC_PATH="$opt_path_backup"
     export EVE4PVE_BARC_LABEL="$opt_label"
     export EVE4PVE_BARC_KEEP=$opt_keep
@@ -339,7 +342,6 @@ function call_hook_script(){
     log debug "-------------------------------------------------------" 
     log debug "EVE4PVE_BARC_PHASE:          $EVE4PVE_BARC_PHASE" 
     log debug "EVE4PVE_BARC_VMID:           $EVE4PVE_BARC_VMID" 
-    log debug "EVE4PVE_BARC_VMTECNOLOGY:    $EVE4PVE_BARC_VMTECNOLOGY" 
     log debug "EVE4PVE_BARC_PATH:           $EVE4PVE_BARC_PATH" 
     log debug "EVE4PVE_BARC_LABEL:          $EVE4PVE_BARC_LABEL" 
     log debug "EVE4PVE_BARC_KEEP:           $EVE4PVE_BARC_KEEP" 
@@ -353,12 +355,10 @@ function call_hook_script(){
     fi
 }
 
-function exit_file(){
-    for f in $1; do
-        ## Check if the glob gets expanded to existing files.
-        ## If not, f here will be exactly the pattern above
-        ## and the exists test will evaluate to false.
-        [ -e "$f" ] && return 0 || return 1
+function exist_file(){
+    local file=''
+    for file in $1; do
+        [ -e "$file" ] && return 0 || return 1
         break
     done
 }
@@ -385,24 +385,25 @@ function backup(){
 
     call_hook_script "backup-job-start" "-" "-"
 
-    for vm_id in $vm_ids; do         
-        get_tecnology
-        [ -z "$vm_tecnology" ] && continue;
+    for vm_id in $vm_ids; do
+        local file_config=''
+
+        #check tecnology
+        if exist_file "$QEMU_CONF/$vm_id$EXT_CONF"; then
+            file_config=$(ls $QEMU_CONF/$vm_id$EXT_CONF)
+
+            if ! grep -q 'agent: 1' < "$file_config"; then
+                log info "VM $vm_id consider enabling QEMU agent see https://pve.proxmox.com/wiki/Qemu-guest-agent"        
+            fi
+
+        elif exist_file "$LXC_CONF/$vm_id$EXT_CONF"; then
+            file_config=$(ls $LXC_CONF/$vm_id$EXT_CONF)
         
-        local cmd_config="$vm_tecnology config $vm_id"
-        local path_config=''
-
-        case $vm_tecnology in
-            $QEMU_CMD) 
-                path_config=$QEMU_CONF; 
-                cmd_config="$cmd_config -current"
-                if ! $cmd_config | grep -q 'agent: 1'; then
-                    log info "VM $vm_id consider enabling QEMU agent see https://pve.proxmox.com/wiki/Qemu-guest-agent"        
-                fi
-                ;;
-
-            $LXC_CMD) path_config=$LXC_CONF;;
-        esac
+        else
+            log error "VM $vm_id - Unknown tecnology"
+            continue            
+        
+        fi 
 
         if ! create_path; then
             continue
@@ -411,7 +412,7 @@ function backup(){
         #disks available for vm/ct
         #exclude no backup
         local disks;
-        disks=$($cmd_config | \
+        disks=$(cat "$file_config" | \
                 grep -P '^(?:((?:virtio|ide|scsi|sata|mp)\d+)|rootfs): ' | \
                 grep -v -P 'cdrom|none' | \
                 grep -v -P 'backup=0' | \
@@ -423,18 +424,18 @@ function backup(){
             #check rbd device  image-spec is pool-name/image-name
             local image_spec; 
             image_spec=$(pvesm path "$disk" | grep 'ceph' | awk '{ split($0,a,":"); print a[2]}')
-            
-            #not rbd device
             [ -z "$image_spec" ] && continue 
 
             #pool-name/image-name@snap-name
             local current_snap="$image_spec@$snap_name_prefix$timestamp"
 
-            local suffix_backup_file=${image_spec//\//.} # ".$(echo "$image_spec" | sed 's#/#.#g')"
+            local suffix_backup_file=${image_spec//\//.}
             local backup_file="$path_backup/$timestamp$suffix_backup_file"
 
+            log info "VM $vm_id - ======== Ceph Image '$image_spec' ======== "
+
             #check exist initial export
-            if ! exit_file "$path_backup/*$suffix_backup_file$EXT_IMAGE"; then
+            if ! exist_file "$path_backup/*$suffix_backup_file$EXT_IMAGE"; then
                 #initial export not exist            
                 backup_file="$backup_file$EXT_IMAGE"
                 
@@ -445,6 +446,7 @@ function backup(){
                 #export initial
                 call_hook_script "export-pre" "$current_snap" "$backup_file"
 
+                log info "VM $vm_id - Export initial '$backup_file'"
                 if ! do_run "rbd export --rbd-concurrent-management-ops 20 $current_snap '$backup_file'"; then
                     remove_snaphot "$current_snap" 0
 
@@ -455,6 +457,7 @@ function backup(){
 
                     break;
                 fi
+                log info "VM $vm_id - Size $(get_size_file "$backup_file")"
 
                 call_hook_script "export-post" "$current_snap" "$backup_file"
 
@@ -474,7 +477,7 @@ function backup(){
                 tms_latest_snap=$(echo "$latest_snap" | \
                                   awk -v prf="$snap_name_prefix" '{print substr($1,length(prf)+1)}')
 
-                if ! exit_file "$path_backup/$tms_latest_snap$suffix_backup_file.*"; then
+                if ! exist_file "$path_backup/$tms_latest_snap$suffix_backup_file.*"; then
                     log error "VM $vm_id - Ceph snapshot '$image_spec@$latest_snap' not found in backup '$path_backup/$tms_latest_snap$suffix_backup_file.*'";                    
                     call_hook_script "export-diff-abort" "-" "-"                 
                     break;
@@ -502,6 +505,7 @@ function backup(){
                 #export-diff difference previus snapshot 
                 call_hook_script "export-diff-pre" "$current_snap" "$backup_file"
 
+                log info "VM $vm_id - Export diff '$backup_file'"
                 if ! do_run "rbd export-diff --from-snap $latest_snap $current_snap '$backup_file'"; then
                     remove_snaphot "$current_snap" 0
 
@@ -512,6 +516,7 @@ function backup(){
                     
                     break;
                 fi
+                log info "VM $vm_id - Size $(get_size_file "$backup_file")" 
 
                 call_hook_script "export-diff-post" "$current_snap" "$backup_file"
 
@@ -522,7 +527,7 @@ function backup(){
         
         #copy config files
         log info "VM $vm_id - Copy config"
-        do_run "cp '$path_config/$vm_id$EXT_CONF' '$path_backup/$timestamp$EXT_CONF'"
+        do_run "cp '$file_config' '$path_backup/$timestamp$EXT_CONF'"
 
         #copy firewall files
         local file_firewall="$PVE_FIREWALL/$vm_id$EXT_FIREWALL"
@@ -534,12 +539,15 @@ function backup(){
         merge_diff_backup
     done
 
-    vm_tecnology=''
     vm_id=0
 
     rm "$pid_file"
 
     call_hook_script "backup-job-end" "-" "-"        
+}
+
+function get_size_file(){
+    echo $(ls -lh "$1" | awk '{print $5}')
 }
 
 function merge_diff_backup(){
@@ -632,9 +640,9 @@ function restore(){
 
         #list all date available 
         read -ra timestamps <<<$(ls -r "$path_backup/"*$image* | \
-                                xargs -n 1 basename | \
-                                awk '{print substr($1,1,12),substr($1,1,12)}' | \
-                                awk 'BEGIN {FIELDWIDTHS="13 2 2 2 2 2 2"} {printf "%s %s-%s-%s_%s:%s:%s\n",$1,$2,$3,$4,$5,$6,$7}') 
+                                 xargs -n 1 basename | \
+                                 awk '{print substr($1,1,12),substr($1,1,12)}' | \
+                                 awk 'BEGIN {FIELDWIDTHS="13 2 2 2 2 2 2"} {printf "%s %s-%s-%s_%s:%s:%s\n",$1,$2,$3,$4,$5,$6,$7}') 
 
         #select timestamp
         local timestamp
@@ -725,20 +733,24 @@ function status(){
             image=$(basename "$image")
             image=${image:12:${#image}-12-4}
 
-            local result
-            result=$(ls "$path_backup/"*$image* | \
-                     xargs -n 1 basename | \
-                     awk -v vmid="$vm_id" '{ split($0,a,"."); print vmid,substr(a[3]" ",1,4),substr($1,1,12),substr($1,13,length($1)-13-length(a[3]))}' | \
-                     awk 'BEGIN {FIELDWIDTHS="4 5 2 2 2 2 2 2 50"} {printf "%s %s %s-%s-%s %s:%s:%s %s\n",$1,$2,$3,$4,$5,$6,$7,$8,$9}')
-
-            if [ ! -z "$result" ]; then
+            local backup=''
+            for backup in $path_backup/*$image*; do
                 if [ $print_header -eq 1 ]; then
                     print_header=0
-                    echo "VM   TYPE  BACKUP             IMAGE"
+                    echo "VM  TYPE SIZE  BACKUP            IMAGE"
                 fi
 
-                echo "${result}"
-            fi
+                local filename; filename=$(basename "$backup")
+                local extension=${filename##*.}
+
+                printf "%-3s %-4s %5s %-6s %-6s %s \n" \
+                       "$vm_id" \
+                       "$extension" \
+                       "$(get_size_file "$backup")" \
+                       "${filename:0:2}-${filename:2:2}-${filename:4:2}" \
+                       "${filename:6:2}:${filename:8:2}:${filename:10:2}" \
+                       "${filename:12:${#filename}-13-${#extension}}"
+            done
         done
     done
 }

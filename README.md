@@ -65,7 +65,7 @@ Report bugs to <support@enterpriseve.com>.
 # Introduction
 Backup And Restore Ceph for Proxmox VE with retention.
 This solution implement backup for Ceph cluster exporting to specific directory.
-The mechanism using Ceph snapshot,export and export differential.
+The mechanism using Ceph snapshot, export and export differential.
 In backup export image and config file VM/CT.
 
 # Main features
@@ -75,7 +75,9 @@ In backup export image and config file VM/CT.
 * Multiple schedule VM using --label (es. daily,monthly)
 * Hook script
 * Multiple VM single execution
-* Copy config and firewall files 
+* Copy config and firewall files
+* Export any vm in cluster
+* Show size of backup and incremental
 
 # Configuration and use
 Download package eve4pve-barc_?.?.?-?_all.deb, on your Proxmox VE host and install:
@@ -114,17 +116,25 @@ root@pve1:~# eve4pve-barc enable --vmid=111 --label='daily'
 Show status backup in directory destination.
 
 ```
-root@pve1:~# eve4pve-barc status --vmid=111 --label='daily' --path=/mnt/bckceph
+root@pve1:~# eve4pve-barc status --vmid=111,112 --label='daily' --path=/mnt/bckceph
 
-TYPE  BACKUP             IMAGE
-img   17-01-08 01:30:45  pool-rbd.vm-103-disk-1
-diff  17-01-10 11:22:47  pool-rbd.vm-103-disk-1
-diff  17-01-10 11:31:10  pool-rbd.vm-103-disk-1
-diff  17-01-10 11:32:04  pool-rbd.vm-103-disk-1
-diff  17-01-10 11:46:16  pool-rbd.vm-103-disk-1
-diff  17-01-10 11:47:30  pool-rbd.vm-103-disk-1
-img   17-01-10 11:46:16  pool-rbd.vm-103-disk-2
-diff  17-01-10 11:47:30  pool-rbd.vm-103-disk-2
+VM  TYPE SIZE   BACKUP            IMAGE
+111 img    4.8G 17-02-08 11:08:21 pool-rbd.vm-111-disk-1
+111 diff   9.3M 17-02-08 17:22:54 pool-rbd.vm-111-disk-1
+111 diff   4.5K 17-02-08 17:26:42 pool-rbd.vm-111-disk-1
+111 diff   4.5K 17-02-08 17:27:33 pool-rbd.vm-111-disk-1
+111 img     512 17-02-08 11:08:21 pool-rbd.vm-111-disk-2
+111 diff   4.5K 17-02-08 17:22:54 pool-rbd.vm-111-disk-2
+111 diff   4.5K 17-02-08 17:26:42 pool-rbd.vm-111-disk-2
+111 diff   4.5K 17-02-08 17:27:33 pool-rbd.vm-111-disk-2
+111 img     512 17-02-08 11:08:21 pool-rbd.vm-111-disk-3
+111 diff   4.5K 17-02-08 17:22:54 pool-rbd.vm-111-disk-3
+111 diff   4.5K 17-02-08 17:26:42 pool-rbd.vm-111-disk-3
+111 diff   4.5K 17-02-08 17:27:33 pool-rbd.vm-111-disk-3
+112 img     10G 17-02-08 17:22:54 pool-rbd.vm-112-disk-1
+112 diff   7.4M 17-02-08 17:26:42 pool-rbd.vm-112-disk-1
+112 diff   1.9M 17-02-08 17:27:33 pool-rbd.vm-112-disk-1
+
 ```
 
 ## Restore a VM one time

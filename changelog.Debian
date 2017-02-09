@@ -1,3 +1,11 @@
+eve4pve-barc (0.1.2)
+
+  * Export any vm in cluster
+  * Add size of backup in status
+  * Remove export EVE4PVE_BARC_VMTECNOLOGY
+
+ -- EnterpriseVE Support Team <support@enterpriseve.com>  09 Feb 2017
+
 eve4pve-barc (0.1.1)
 
   * Multiple VM single execution
