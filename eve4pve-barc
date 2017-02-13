@@ -3,14 +3,17 @@
 # EnterpriseVE Backup And Restore Ceph for Proxmox VE.
 # Author: Daniele Corsini <daniele.corsini@enterpriseve.com>
 
-declare -r VERSION=0.1.2
+declare -r VERSION=0.1.3
 declare -r NAME=$(basename "$0")
 declare -r PROGNAME=${NAME%.*}
 
 declare -r PVE_DIR="/etc/pve"
 declare -r PVE_FIREWALL="$PVE_DIR/firewall"
-declare -r QEMU_CONF="$PVE_DIR/nodes/*/qemu-server"
-declare -r LXC_CONF="$PVE_DIR/nodes/*/lxc"
+declare -r PVE_NODES="$PVE_DIR/nodes"
+declare -r QEMU='qemu-server'
+declare -r LXC='lxc'
+declare -r QEMU_CONF_CLUSTER="$PVE_NODES/*/$QEMU"
+declare -r LXC_CONF_CLUSTER="$PVE_NODES/*/$LXC"
 
 declare -r EXT_IMAGE='.img'
 declare -r EXT_DIFF='.diff'
@@ -82,7 +85,8 @@ Commands:
 
 Options:
     --vmid=string        The ID of the VM, comma separated (es. 100,101,102), 
-                         'all' for all known guest systems.
+                         'all-???' for all known guest systems in specific host (es. all-pve1, all-\$(hostname)),
+                         'all' for all known guest systems in cluster.
     --label=string       Is usually 'hourly', 'daily', 'weekly', or 'monthly'.
     --path=string        Path destination backup.
     --keep=integer       Specify the number of backup which should will keep, Default 1.
@@ -121,6 +125,32 @@ function log(){
     esac
 }
 
+function get_vm_ids(){
+    local data=''
+    local conf=''
+
+    while [ $# -gt 0 ]; do
+        for conf in $1; do
+            [ ! -e "$conf" ] && break
+
+            conf=$(basename "$conf")
+            [ "$data" != '' ] && data="$data,"
+            data="$data${conf%.*}"
+        done
+        shift
+    done
+
+    echo "$data"
+}
+
+function exist_file(){
+    local file=''
+    for file in $1; do
+        [ -e "$file" ] && return 0 || return 1
+        break
+    done
+}
+
 function parse_opts(){
     local action=$1
     shift
@@ -154,28 +184,28 @@ function parse_opts(){
     [ ! -d "$opt_path_backup" ] && { log info "Path Backup is not set"; exit 1; }
     [ -z "$opt_vm_ids" ] && { log info "VM id is not set."; exit 1; }
     if [ "$opt_vm_ids" = "all" ]; then
-        vm_ids=''
-        local conf=''
+        #all in cluster
 
-        #VM
-        for conf in $QEMU_CONF/*$EXT_CONF; do
-            [ ! -e "$conf" ] && break
+        local data=''
+        data=$(get_vm_ids "$QEMU_CONF_CLUSTER/*$EXT_CONF" "$LXC_CONF_CLUSTER/*$EXT_CONF")
+        vm_ids=$(echo "$data" | tr ',' '\n')
 
-            conf=$(basename "$conf")
-            [ "$vm_ids" != '' ] && vm_ids="$vm_ids,"
-            vm_ids="$vm_ids${conf%.*}"
-        done
+    elif [[ "$opt_vm_ids" == "all-"* ]]; then
+        #all in specific host
 
-        #CT
-        for conf in $LXC_CONF/*$EXT_CONF; do
-            [ ! -e "$conf" ] && break
+        local host=${opt_vm_ids#*-}
+        
+        if ! exist_file "$PVE_NODES/$host"; then
+            log info "Host not found!"
+            exit 1
+        fi
 
-            conf=$(basename "$conf")
-            [ "$vm_ids" != '' ] && vm_ids="$vm_ids,"
-            vm_ids="$vm_ids${conf%.*}"
-        done
+        local data=''
+        data=$(get_vm_ids "$PVE_NODES/$host/$QEMU/*$EXT_CONF" "$PVE_NODES/$host/$LXC/*$EXT_CONF")
+        [ -z "$data" ] && { log info "VM id is not set."; exit 1; }
 
-        vm_ids=$(echo "$vm_ids" | tr ',' '\n')
+        vm_ids=$(echo "$data" | tr ',' '\n')
+
     else
         #comma separated
         vm_ids=$(echo "$opt_vm_ids" | tr ',' '\n')
@@ -355,14 +385,6 @@ function call_hook_script(){
     fi
 }
 
-function exist_file(){
-    local file=''
-    for file in $1; do
-        [ -e "$file" ] && return 0 || return 1
-        break
-    done
-}
-
 function backup(){
     parse_opts "$@"
 
@@ -389,15 +411,15 @@ function backup(){
         local file_config=''
 
         #check tecnology
-        if exist_file "$QEMU_CONF/$vm_id$EXT_CONF"; then
-            file_config=$(ls $QEMU_CONF/$vm_id$EXT_CONF)
+        if exist_file "$QEMU_CONF_CLUSTER/$vm_id$EXT_CONF"; then
+            file_config=$(ls $QEMU_CONF_CLUSTER/$vm_id$EXT_CONF)
 
             if ! grep -q 'agent: 1' < "$file_config"; then
                 log info "VM $vm_id consider enabling QEMU agent see https://pve.proxmox.com/wiki/Qemu-guest-agent"        
             fi
 
-        elif exist_file "$LXC_CONF/$vm_id$EXT_CONF"; then
-            file_config=$(ls $LXC_CONF/$vm_id$EXT_CONF)
+        elif exist_file "$LXC_CONF_CLUSTER/$vm_id$EXT_CONF"; then
+            file_config=$(ls $LXC_CONF_CLUSTER/$vm_id$EXT_CONF)
         
         else
             log error "VM $vm_id - Unknown tecnology"
@@ -423,8 +445,13 @@ function backup(){
         for disk in $disks; do
             #check rbd device  image-spec is pool-name/image-name
             local image_spec; 
-            image_spec=$(pvesm path "$disk" | grep 'ceph' | awk '{ split($0,a,":"); print a[2]}')
-            [ -z "$image_spec" ] && continue 
+
+            #if krbd enable
+            image_spec=$(pvesm path "$disk" | grep '^/dev/rbd/' | sed -e "s/^\/dev\/rbd\///")
+            if [ -z "$image_spec" ]; then
+                image_spec=$(pvesm path "$disk" | grep '/ceph/' | awk '{ split($0,a,":"); print a[2]}')
+                [ -z "$image_spec" ] && continue 
+            fi
 
             #pool-name/image-name@snap-name
             local current_snap="$image_spec@$snap_name_prefix$timestamp"

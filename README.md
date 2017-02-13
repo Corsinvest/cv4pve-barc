@@ -51,7 +51,8 @@ Commands:
 
 Options:
     --vmid=string        The ID of the VM, comma separated (es. 100,101,102), 
-                         'all' for all known guest systems.
+                         'all-???' for all known guest systems in specific host (es. all-pve1, all-\$(hostname)),
+                         'all' for all known guest systems in cluster.
     --label=string       Is usually 'hourly', 'daily', 'weekly', or 'monthly'.
     --path=string        Path destination backup.
     --keep=integer       Specify the number of backup which should will keep, Default 1.
@@ -76,8 +77,10 @@ In backup export image and config file VM/CT.
 * Hook script
 * Multiple VM single execution
 * Copy config and firewall files
-* Export any vm in cluster
+* Export any vm in cluster 'all'
+* Export any vm in specific host 'all-hostname' 
 * Show size of backup and incremental
+* Check 'No backup' flag in disk configuration
 
 # Configuration and use
 Download package eve4pve-barc_?.?.?-?_all.deb, on your Proxmox VE host and install:

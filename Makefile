@@ -1,8 +1,6 @@
-VERSION=$(shell ./eve4pve-barc version)
-DATE=$(shell LANG=en_us_8859_1; date '+%b %d, %Y')
-
 PACKAGE=eve4pve-barc
-
+VERSION=$(shell ./${PACKAGE} version)
+DATE=$(shell LANG=en_us_8859_1; date '+%b %d, %Y')
 DESTDIR=
 PREFIX=/usr
 SBINDIR=${PREFIX}/sbin
@@ -30,7 +28,7 @@ install:
 
 	install -d ${DESTDIR}${MAN8DIR}
 	install -m 0644 ${PACKAGE}.8 ${DESTDIR}${MAN8DIR}
-	gzip ${DESTDIR}${MAN8DIR}/${PACKAGE}.8
+	gzip -n -9 ${DESTDIR}${MAN8DIR}/${PACKAGE}.8
 
 	install -d ${DESTDIR}${EXAMPLE}
 	install -m 0755 script-hook.sh ${DESTDIR}${EXAMPLE}
@@ -41,7 +39,7 @@ deb ${DEB}:
 	rm -rf debian
 	mkdir debian
 
-	$(shell ./eve4pve-barc help --no-logo > help.tmp)
+	$(shell ./${PACKAGE} help --no-logo > help.tmp)
 	sed '/@@COPYRIGHT@@/r copyright' ${PACKAGE}.8.template | \
 	sed "/@@COPYRIGHT@@/d" | \
 	sed '/@@SYNOPSIS@@/r help.tmp' | \
@@ -55,13 +53,14 @@ deb ${DEB}:
 	install -d -m 0755 debian/DEBIAN
 	sed -e s/@@VERSION@@/${VERSION}/ -e s/@@PACKAGE@@/${PACKAGE}/  <control.in >debian/DEBIAN/control
 	install -D -m 0644 copyright debian/${DOCDIR}/copyright
-	install -m 0644 changelog.Debian debian/${DOCDIR}/
-	gzip -9 debian/${DOCDIR}/changelog.Debian
+	install -m 0644 changelog debian/${DOCDIR}/
+	gzip -n -9 debian/${DOCDIR}/changelog
 	dpkg-deb --build debian
 	mv debian.deb ${DEB}
 	rm -rf debian
 	rm ${PACKAGE}.8
 	rm help.tmp
+	#lintian ${DEB}
 
 .PHONY: clean
 clean:
