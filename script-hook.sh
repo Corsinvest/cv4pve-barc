@@ -41,6 +41,10 @@ hook() {
         snap-remove-post);;
         snap-remove-abort);;
 
+        #restore job status
+        restore-job-start);;
+        restore-job-end);;
+
         *) echo "unknown phase '$EVE4PVE_BARC_PHASE'"; return 1;;
     esac
 }

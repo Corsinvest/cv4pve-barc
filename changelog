@@ -1,4 +1,13 @@
-eve4pve-barc (0.1.3)
+eve4pve-barc (0.1.4)
+
+  * Add reset command remove all snapshots on images
+  * Remove control qm agent enabled
+  * Add hook in restore procedure
+  * Add --unprotect-snap parameter disable protection snap
+
+ -- EnterpriseVE Support Team <support@enterpriseve.com>  04 Apr 2017
+ 
+ eve4pve-barc (0.1.3)
 
   * Support krbd flag
   * Add all-^??? hostname 

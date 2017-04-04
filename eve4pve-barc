@@ -3,7 +3,7 @@
 # EnterpriseVE Backup And Restore Ceph for Proxmox VE.
 # Author: Daniele Corsini <daniele.corsini@enterpriseve.com>
 
-declare -r VERSION=0.1.3
+declare -r VERSION=0.1.4
 declare -r NAME=$(basename "$0")
 declare -r PROGNAME=${NAME%.*}
 
@@ -28,11 +28,13 @@ declare -i opt_dry_run=0
 declare opt_path_backup=''
 declare opt_label=''
 declare opt_script=''
+declare -i opt_unprotect_snap=0
 
 declare snap_name_prefix=''
 declare path_backup=''
 declare -i vm_id=0
 declare -A vm_ids
+declare file_config=''
 
 function usage(){
    shift
@@ -58,18 +60,19 @@ Usage:
     $PROGNAME version
  
     $PROGNAME create  --vmid=<string> --label=<string> --path=<string> --keep=<integer>
-                         --script=<string> --syslog 
-    $PROGNAME destroy --vmid=<string> --label=<string>
-    $PROGNAME enable  --vmid=<string> --label=<string>
-    $PROGNAME disable --vmid=<string> --label=<string>
+                         --script=<string> --unprotect-snap --syslog 
+    $PROGNAME destroy --vmid=<string> --label=<string> --path=<string> 
+    $PROGNAME enable  --vmid=<string> --label=<string> --path=<string> 
+    $PROGNAME disable --vmid=<string> --label=<string> --path=<string> 
 
     $PROGNAME backup  --vmid=<string> --label=<string> --path=<string> --keep=<integer>
-                         --script=<string> --syslog 
+                         --script=<string> --unprotect-snap --syslog 
     $PROGNAME restore --vmid=<string> --label=<string> --path=<string>
                          --script=<string> --syslog 
 
     $PROGNAME status  --vmid=<string> --label=<string> --path=<string>   
     $PROGNAME clean   --vmid=<string> --label=<string> --path=<string> --keep=<integer>
+    $PROGNAME reset   --vmid=<string> --label=<string>   
 
 Commands:
     version              Show version program.
@@ -80,19 +83,22 @@ Commands:
     disable              Disable backup job from scheduler.
     status               Get list of all backups.
     clean                Clear all backup.
+    reset                Remove all snapshots on images specific vm in Ceph.
     backup               Will backup one time.
     restore              Will restore one time.
 
 Options:
-    --vmid=string        The ID of the VM, comma separated (es. 100,101,102), 
+    --vmid=              The ID of the VM, comma separated (es. 100,101,102), 
                          'all-???' for all known guest systems in specific host (es. all-pve1, all-\$(hostname)),
                          'all' for all known guest systems in cluster.
-    --label=string       Is usually 'hourly', 'daily', 'weekly', or 'monthly'.
-    --path=string        Path destination backup.
-    --keep=integer       Specify the number of backup which should will keep, Default 1.
-    --script=string      Use specified hook script.
+    --label=             Is usually 'hourly', 'daily', 'weekly', or 'monthly'.
+    --path=              Path destination backup.
+    --keep=              Specify the number of backup which should will keep, Default 1.
+    --script=            Use specified hook script.
                          Es. /usr/share/doc/$PROGNAME/examples/script-hook.sh
     --syslog             Write messages into the system log.
+    --unprotect-snap     Disable protection snapshot, default is protected. 
+                         In Proxmox VE 'protected snapshot' cause problem in remove VM/CT see documentation.
 
 Report bugs to <support@enterpriseve.com>. 
 EOF
@@ -159,7 +165,7 @@ function parse_opts(){
     args=$(getopt \
            --options '' \
            --longoptions=path:,vmid:,label:,keep: \
-           --longoptions=script:,syslog,debug,dry-run \
+           --longoptions=script:,syslog,debug,dry-run,unprotect-snap \
            --name "$PROGNAME" \
            -- "$@") \
            || exit 128
@@ -176,12 +182,16 @@ function parse_opts(){
         --syslog) opt_syslog=1; shift;;
         --debug) opt_debug=1; shift;;
         --dry-run) opt_dry_run=1; shift;;
+        --unprotect-snap) opt_unprotect_snap=1; shift;;
         --) shift; break;;
         *) break;;
       esac
     done
 
-    [ ! -d "$opt_path_backup" ] && { log info "Path Backup is not set"; exit 1; }
+    if [ "$action" != "reset" ]; then
+        [ ! -d "$opt_path_backup" ] && { log info "Path Backup is not set"; exit 1; }
+    fi
+
     [ -z "$opt_vm_ids" ] && { log info "VM id is not set."; exit 1; }
     if [ "$opt_vm_ids" = "all" ]; then
         #all in cluster
@@ -217,10 +227,8 @@ function parse_opts(){
     snap_name_prefix="barc$opt_label"
 }
 
-function create_path(){
+function get_path(){
     path_backup="$opt_path_backup/barc/$vm_id/$opt_label"
-    mkdir -p "$path_backup" || { log error "VM $vm_id - Problem creation path '$path_backup'"; return 1; }
-    return 0;
 }
 
 function cron_action_job(){
@@ -261,9 +269,10 @@ EOL
 
             local job="$cron_scheduling root $PROGNAME $job_key_cron --keep=$opt_keep"
 
-            [ -e "$opt_script" ] && job="$job --script='$opt_script'"     #script hook
-            [ $opt_syslog -eq 1 ] && job="$job --syslog"                  #syslog
-        
+            [ -e "$opt_script" ] && job="$job --script='$opt_script'"
+            [ $opt_unprotect_snap -eq 1 ] && job="$job --unprotect-snap"
+            [ $opt_syslog -eq 1 ] && job="$job --syslog"     
+
             echo -e "$job" >> "$cron_file"
             ;;
 
@@ -303,10 +312,7 @@ function clean(){
     call_hook_script "clean-job-start" "-" "-"
 
     for vm_id in $vm_ids; do
-        if ! create_path; then
-          continue;
-        fi
-
+        get_path
         merge_diff_backup
     done
 
@@ -320,8 +326,6 @@ function clean(){
 function create_snapshot(){
     local snap="$1"
 
-    #qm agent $vm_id fsfreeze-freeze 
-
     call_hook_script "snap-create-pre" "$snap" "-"
     log info "VM $vm_id - Creating snapshot $snap"
 
@@ -330,14 +334,17 @@ function create_snapshot(){
         return 1;
     fi
 
-    if ! do_run "rbd snap protect $snap"; then    
-        call_hook_script "snap-create-abort" "$snap" "-"
-        return 1;
+    #check if protected/unprotect mode snapshot
+    if [ $opt_unprotect_snap -eq 0 ]; then
+        if ! do_run "rbd snap protect $snap"; then    
+            call_hook_script "snap-create-abort" "$snap" "-"
+            return 1;
+        fi
+    else
+        log info "VM $vm_id - !!!!! >>> UNPROTECTED SNAPSHOT $snap <<< !!!!!"
     fi
 
     call_hook_script "snap-create-post" "$snap" "-"
-
-    #qm agent $vm_id fsfreeze-thaw 
 }
 
 function remove_snaphot(){
@@ -347,11 +354,16 @@ function remove_snaphot(){
     [ "$hook" -eq 1 ] && call_hook_script "snap-remove-pre" "$snap" "-"
     log info "VM $vm_id - Remove snapshot $snap"
     
-    if ! do_run "rbd snap unprotect $snap"; then    
-        [ "$hook" -eq 1 ] && call_hook_script "snap-remove-abort" "$snap" "-"
-        return 1;
+
+    #check is protectd
+    local info; info=$(rbd info $snap | grep 'protected: True');
+    if [ ! -z "$info" ]; then
+        if ! do_run "rbd snap unprotect $snap"; then    
+            [ "$hook" -eq 1 ] && call_hook_script "snap-remove-abort" "$snap" "-"
+            return 1;
+        fi
     fi
-    
+
     if ! do_run "rbd snap rm $snap"; then    
         [ "$hook" -eq 1 ] && call_hook_script "snap-remove-abort" "$snap" "-"
         return 1;
@@ -408,26 +420,13 @@ function backup(){
     call_hook_script "backup-job-start" "-" "-"
 
     for vm_id in $vm_ids; do
-        local file_config=''
+        get_config_file
+        [ -z "$file_config" ] && continue
 
-        #check tecnology
-        if exist_file "$QEMU_CONF_CLUSTER/$vm_id$EXT_CONF"; then
-            file_config=$(ls $QEMU_CONF_CLUSTER/$vm_id$EXT_CONF)
-
-            if ! grep -q 'agent: 1' < "$file_config"; then
-                log info "VM $vm_id consider enabling QEMU agent see https://pve.proxmox.com/wiki/Qemu-guest-agent"        
-            fi
-
-        elif exist_file "$LXC_CONF_CLUSTER/$vm_id$EXT_CONF"; then
-            file_config=$(ls $LXC_CONF_CLUSTER/$vm_id$EXT_CONF)
-        
-        else
-            log error "VM $vm_id - Unknown tecnology"
-            continue            
-        
-        fi 
-
-        if ! create_path; then
+        #create path backup
+        get_path
+        if ! mkdir -p "$path_backup"; then
+            log error "VM $vm_id - Problem creation path '$path_backup'"
             continue
         fi
 
@@ -638,24 +637,71 @@ function merge_diff_backup(){
     done
 }
 
+function get_config_file(){
+    file_config=''
+
+    if exist_file "$QEMU_CONF_CLUSTER/$vm_id$EXT_CONF"; then
+        file_config=$(ls $QEMU_CONF_CLUSTER/$vm_id$EXT_CONF)
+
+    elif exist_file "$LXC_CONF_CLUSTER/$vm_id$EXT_CONF"; then
+        file_config=$(ls $LXC_CONF_CLUSTER/$vm_id$EXT_CONF)
+    
+    else
+        log error "VM $vm_id - Unknown tecnology"
+    
+    fi 
+}
+
+function reset(){
+    parse_opts "$@"
+    
+    for vm_id in $vm_ids; do
+        get_config_file
+        [ -z "$file_config" ] && continue
+
+        local disks;
+        disks=$(cat "$file_config" | \
+                grep -P '^(?:((?:virtio|ide|scsi|sata|mp)\d+)|rootfs): ' | \
+                grep -v -P 'cdrom|none' | \
+                grep -v -P 'backup=0' | \
+                awk '{ split($0,a,","); split(a[1],b," "); print b[2]}')
+
+        #decode disk
+        local disk=''
+        for disk in $disks; do
+            #check rbd device  image-spec is pool-name/image-name
+            local image_spec; 
+
+            #if krbd enable
+            image_spec=$(pvesm path "$disk" | grep '^/dev/rbd/' | sed -e "s/^\/dev\/rbd\///")
+            if [ -z "$image_spec" ]; then
+                image_spec=$(pvesm path "$disk" | grep '/ceph/' | awk '{ split($0,a,":"); print a[2]}')
+                [ -z "$image_spec" ] && continue 
+            fi
+
+            local snap_name
+            for snap_name in $(rbd snap ls "$image_spec" | \
+                               awk '{print $2}' | 
+                               grep "$opt_label" | sort -r); do 
+
+                remove_snaphot "$image_spec@$snap_name" 0
+            done
+        done
+    done;
+}
+
 function restore(){
     parse_opts "$@"
 
     for vm_id in $vm_ids; do
-        if ! create_path; then
-          continue;
-        fi
-        
-        if ! create_path; then
-            exit 1
-        fi
+        get_path   
 
         local title="EnterpriseVE Backup and Restore Ceph for Proxmox VE"
 
         #list all immge available 
         read -ra images <<<$(ls "$path_backup/"*$EXT_IMAGE | \
-                            xargs -n 1 basename | \
-                            awk '{printf "%s %s\n",substr($1,13,length($1)-16),substr($1,13,length($1)-16)}')
+                             xargs -n 1 basename | \
+                             awk '{printf "%s %s\n",substr($1,13,length($1)-16),substr($1,13,length($1)-16)}')
 
         #select image to recovery
         local image;
@@ -709,6 +755,8 @@ function restore(){
             exit 1
         fi
 
+        call_hook_script "restore-job-start" "-" "-"
+
         log info "Start restore process"    
 
         local backup=''
@@ -716,7 +764,7 @@ function restore(){
             if [[ $backup == *".img" ]]; then
                 #initial import 
                 log info "Inital import $(basename "$backup")"                
-                do_run "rbd import '$backup' $pool_name/$name_import"
+                do_run "rbd import --image-format 2 '$backup' $pool_name/$name_import"
 
                 #create initlal snap name
                 local timestamp_snap; timestamp_snap=$(basename "$backup" | awk '{print substr($1,1,12)}')
@@ -739,6 +787,8 @@ function restore(){
         log info "Backup $image restored in $pool_name/$name_import with success!"    
         log info "Consider to manually create VM/CT and change config file from backup adapting restored image."    
 
+        call_hook_script "restore-job-end" "-" "-"
+
         break;
     done
 }
@@ -749,9 +799,7 @@ function status(){
     local print_header=1
 
     for vm_id in $vm_ids; do
-        if ! create_path; then
-          continue;
-        fi
+        get_path
 
         local image=''
         for image in $path_backup/*$EXT_IMAGE; do
@@ -794,6 +842,7 @@ function main(){
         restore) restore "$@";;       
         clean) clean "$@";;
         status) status "$@";; 
+        reset) reset "$@";; 
         *) usage;;
     esac
 

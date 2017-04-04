@@ -24,18 +24,19 @@ Usage:
     eve4pve-barc version
  
     eve4pve-barc create  --vmid=<string> --label=<string> --path=<string> --keep=<integer>
-                         --script=<string> --syslog 
-    eve4pve-barc destroy --vmid=<string> --label=<string>
-    eve4pve-barc enable  --vmid=<string> --label=<string>
-    eve4pve-barc disable --vmid=<string> --label=<string>
+                         --script=<string> --unprotect-snap --syslog
+    eve4pve-barc destroy --vmid=<string> --label=<string> --path=<string> 
+    eve4pve-barc enable  --vmid=<string> --label=<string> --path=<string> 
+    eve4pve-barc disable --vmid=<string> --label=<string> --path=<string> 
 
     eve4pve-barc backup  --vmid=<string> --label=<string> --path=<string> --keep=<integer>
-                         --script=<string> --syslog 
+                         --script=<string> --unprotect-snap --syslog 
     eve4pve-barc restore --vmid=<string> --label=<string> --path=<string>
                          --script=<string> --syslog 
 
     eve4pve-barc status  --vmid=<string> --label=<string> --path=<string>   
     eve4pve-barc clean   --vmid=<string> --label=<string> --path=<string> --keep=<integer>
+    eve4pve-barc reset   --vmid=<string> --label=<string> 
 
 Commands:
     version              Show version program.
@@ -45,20 +46,23 @@ Commands:
     enable               Enable backup job from scheduler.
     disable              Disable backup job from scheduler.
     status               Get list of all backups.
-    clean                Clear all backups.
+    clean                Clear all backup.
+    reset                Remove all snapshots on images specific vm in Ceph.
     backup               Will backup one time.
     restore              Will restore one time.
 
 Options:
-    --vmid=string        The ID of the VM, comma separated (es. 100,101,102), 
-                         'all-???' for all known guest systems in specific host (es. all-pve1, all-\$(hostname)),
+    --vmid=              The ID of the VM, comma separated (es. 100,101,102), 
+                         'all-???' for all known guest systems in specific host (es. all-pve1, all-$(hostname)),
                          'all' for all known guest systems in cluster.
-    --label=string       Is usually 'hourly', 'daily', 'weekly', or 'monthly'.
-    --path=string        Path destination backup.
-    --keep=integer       Specify the number of backup which should will keep, Default 1.
-    --script=string      Use specified hook script.
+    --label=             Is usually 'hourly', 'daily', 'weekly', or 'monthly'.
+    --path=              Path destination backup.
+    --keep=              Specify the number of backup which should will keep, Default 1.
+    --script=            Use specified hook script.
                          Es. /usr/share/doc/eve4pve-barc/examples/script-hook.sh
     --syslog             Write messages into the system log.
+    --unprotect-snap     Disable protection snapshot, default is protected. 
+                         In Proxmox VE 'protected snapshot' cause problem in remove VM/CT see documentation.
 
 Report bugs to <support@enterpriseve.com>. 
 ```
@@ -68,6 +72,8 @@ Backup And Restore Ceph for Proxmox VE with retention.
 This solution implement backup for Ceph cluster exporting to specific directory.
 The mechanism using Ceph snapshot, export and export differential.
 In backup export image and config file VM/CT.
+
+For *continuous data protection* see [eve4pve-autosnap](https://github.com/EnterpriseVE/eve4pve-autosnap)
 
 # Main features
 * For KVM and LXC
@@ -81,6 +87,14 @@ In backup export image and config file VM/CT.
 * Export any vm in specific host 'all-hostname' 
 * Show size of backup and incremental
 * Check 'No backup' flag in disk configuration
+* Protected/unprotected snap mode
+
+# Protected / unprotected snapshot
+During backup snapshot is created in protected mode, to avoid accidental deletion.
+In Proxom VE remove VM not possible with error "Removing all snapshots: 0% complete...failed".
+The problem is **Proxmox VE unprotect only the snapshos it knows**.
+
+Whit parameter **--unprotect-snap** is possible to disable protection snap.
 
 # Configuration and use
 Download package eve4pve-barc_?.?.?-?_all.deb, on your Proxmox VE host and install:
