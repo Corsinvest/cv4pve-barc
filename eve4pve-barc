@@ -3,7 +3,7 @@
 # EnterpriseVE Backup And Restore Ceph for Proxmox VE.
 # Author: Daniele Corsini <daniele.corsini@enterpriseve.com>
 
-declare -r VERSION=0.1.4
+declare -r VERSION=0.1.5
 declare -r NAME=$(basename "$0")
 declare -r PROGNAME=${NAME%.*}
 
@@ -85,7 +85,7 @@ Commands:
     clean                Clear all backup.
     reset                Remove all snapshots on images specific vm in Ceph.
     backup               Will backup one time.
-    restore              Will restore one time.
+    restore              Will restore image one time.
 
 Options:
     --vmid=              The ID of the VM, comma separated (es. 100,101,102), 
@@ -354,7 +354,6 @@ function remove_snaphot(){
     [ "$hook" -eq 1 ] && call_hook_script "snap-remove-pre" "$snap" "-"
     log info "VM $vm_id - Remove snapshot $snap"
     
-
     #check is protectd
     local info; info=$(rbd info $snap | grep 'protected: True');
     if [ ! -z "$info" ]; then
@@ -442,7 +441,7 @@ function backup(){
         #decode disk
         local disk=''
         for disk in $disks; do
-            #check rbd device  image-spec is pool-name/image-name
+            #check rbd device image-spec is pool-name/image-name
             local image_spec; 
 
             #if krbd enable
@@ -496,6 +495,13 @@ function backup(){
                 latest_snap=$(rbd snap ls "$image_spec" | \
                               awk '{print $2}' | \
                               grep "$opt_label" | sort -r | head -n 1)
+
+                #not exist snapshot on rbd
+                if [ -z "$latest_snap" ]; then
+                    log error "VM $vm_id - Ceph last snapshot '$image_spec' not found!";                    
+                    call_hook_script "export-diff-abort" "-" "-"                 
+                    break;
+                fi
 
                 #verify exist last snapshot ceph in file backup
                 #timestamp last snapshot
@@ -659,6 +665,8 @@ function reset(){
         get_config_file
         [ -z "$file_config" ] && continue
 
+        #disks available for vm/ct
+        #exclude no backup
         local disks;
         disks=$(cat "$file_config" | \
                 grep -P '^(?:((?:virtio|ide|scsi|sata|mp)\d+)|rootfs): ' | \
@@ -669,7 +677,7 @@ function reset(){
         #decode disk
         local disk=''
         for disk in $disks; do
-            #check rbd device  image-spec is pool-name/image-name
+            #check rbd device image-spec is pool-name/image-name
             local image_spec; 
 
             #if krbd enable
@@ -696,12 +704,12 @@ function restore(){
     for vm_id in $vm_ids; do
         get_path   
 
-        local title="EnterpriseVE Backup and Restore Ceph for Proxmox VE"
+        local title="EnterpriseVE BARC | Restore image"
 
-        #list all immge available 
-        read -ra images <<<$(ls "$path_backup/"*$EXT_IMAGE | \
-                             xargs -n 1 basename | \
-                             awk '{printf "%s %s\n",substr($1,13,length($1)-16),substr($1,13,length($1)-16)}')
+        #list all image available 
+        images=($(ls "$path_backup/"*$EXT_IMAGE | \
+                  xargs -n 1 basename | \
+                  awk '{printf "%s %s\n",substr($1,13,length($1)-16),substr($1,13,length($1)-16)}'))
 
         #select image to recovery
         local image;
@@ -712,10 +720,9 @@ function restore(){
         [ -z "$image" ] && exit 1
 
         #list all date available 
-        read -ra timestamps <<<$(ls -r "$path_backup/"*$image* | \
-                                 xargs -n 1 basename | \
-                                 awk '{print substr($1,1,12),substr($1,1,12)}' | \
-                                 awk 'BEGIN {FIELDWIDTHS="13 2 2 2 2 2 2"} {printf "%s %s-%s-%s_%s:%s:%s\n",$1,$2,$3,$4,$5,$6,$7}') 
+        timestamps=($(ls -r "$path_backup/"*$image* | \
+                      xargs -n 1 basename | \
+                      awk '{print substr($1,1,12),substr($1,1,2) "-" substr($1,3,2) "-" substr($1,5,2) "_" substr($1,7,2) ":" substr($1,9,2) ":" substr($1,11,2)}'))
 
         #select timestamp
         local timestamp
@@ -725,8 +732,8 @@ function restore(){
 
         [ -z "$timestamp" ] && exit 1
 
-        #list all ppols 
-        read -ra pools <<<$(rados lspools | awk '{printf "%s %s\n",$1,$1}') 
+        #list all ppols
+        pools=($(rados lspools | awk '{printf "%s %s\n",$1,$1}'))
 
         #select timestamp
         local pool_name; 

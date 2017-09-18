@@ -4,7 +4,7 @@ DATE=$(shell LANG=en_us_8859_1; date '+%b %d, %Y')
 DESTDIR=
 PREFIX=/usr
 SBINDIR=${PREFIX}/sbin
-CRONDIR=/etc/cron.d
+#CRONDIR=/etc/cron.d
 MANDIR=${PREFIX}/share/man
 DOCDIR=${PREFIX}/share/doc/${PACKAGE}
 MAN8DIR=${MANDIR}/man8
@@ -23,8 +23,8 @@ install:
 	install -d ${DESTDIR}${SBINDIR}
 	install -m 0755 ${PACKAGE} ${DESTDIR}${SBINDIR}
 
-	install -d ${DESTDIR}${CRONDIR}
-	install -m 0644 ${PACKAGE}.cron ${DESTDIR}${CRONDIR}/${PACKAGE}
+#	install -d ${DESTDIR}${CRONDIR}
+#	install -m 0644 ${PACKAGE}.cron ${DESTDIR}${CRONDIR}/${PACKAGE}
 
 	install -d ${DESTDIR}${MAN8DIR}
 	install -m 0644 ${PACKAGE}.8 ${DESTDIR}${MAN8DIR}

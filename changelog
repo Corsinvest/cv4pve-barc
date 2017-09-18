@@ -1,3 +1,11 @@
+eve4pve-barc (0.1.5)
+
+  * Keep the cronjobs while installing a new version of the package #9  
+  * Check if snapshot exist in rbd pool in incremental #12
+  * Fix restore problem #10
+
+ -- EnterpriseVE Support Team <support@enterpriseve.com>  18 Sep 2017 15:42:01 +0100
+
 eve4pve-barc (0.1.4)
 
   * Add reset command remove all snapshots on images
