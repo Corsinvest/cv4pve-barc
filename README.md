@@ -1,4 +1,6 @@
 # eve4pve-barc
+
+[![Join the chat at https://gitter.im/EnterpriseVE/eve4pve-barc](https://badges.gitter.im/EnterpriseVE/eve4pve-barc.svg)](https://gitter.im/EnterpriseVE/eve4pve-barc?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 Backup And Restore Ceph for Proxmox VE
 
 [More information about eve4pve-barc](http://www.enterpriseve.com/backup-and-restore-ceph-proxmox-ve/)
