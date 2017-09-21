@@ -1,4 +1,10 @@
 # eve4pve-barc
+<p align="center">
+ <a href="https://www.gnu.org/licenses/gpl-3.0.en.html" target="_blank"><img src="https://img.shields.io/github/license/EnterpriseVE/eve4pve-barc.svg" alt="GNU GPL v3"></a>
+  <a href="https://gitter.im/EnterpriseVE/eve4pve-barc" target="_blank"><img src="https://badges.gitter.im/EnterpriseVE/eve4pve-barc.svg" alt="Gitter"></a>
+  <a href="https://github.com/EnterpriseVE/eve4pve-barc/releases/latest" target="_blank"><img src="https://img.shields.io/github/release/EnterpriseVE/eve4pve-barc.svg" alt="Release"></a>
+</p>
+
 Backup And Restore Ceph for Proxmox VE
 
 [More information about eve4pve-barc](http://www.enterpriseve.com/backup-and-restore-ceph-proxmox-ve/)
