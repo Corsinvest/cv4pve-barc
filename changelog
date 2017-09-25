@@ -1,4 +1,12 @@
-eve4pve-barc (0.1.5)
+eve4pve-barc (0.1.6)
+
+  * Add Notification email log #8
+  * Add Assemble image with diff files #7
+  * Fix multiple disk before create snapshot and after export image #15
+
+ -- EnterpriseVE Support Team <support@enterpriseve.com>  25 Sep 2017 16:22:01 +0100
+ 
+ eve4pve-barc (0.1.5)
 
   * Keep the cronjobs while installing a new version of the package #9  
   * Check if snapshot exist in rbd pool in incremental #12

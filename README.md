@@ -4,7 +4,6 @@
   <a href="https://gitter.im/EnterpriseVE/eve4pve-barc" target="_blank"><img src="https://badges.gitter.im/EnterpriseVE/eve4pve-barc.svg" alt="Gitter"></a>
   <a href="https://github.com/EnterpriseVE/eve4pve-barc/releases/latest" target="_blank"><img src="https://img.shields.io/github/release/EnterpriseVE/eve4pve-barc.svg" alt="Release"></a>
 </p>
-
 Backup And Restore Ceph for Proxmox VE
 
 [More information about eve4pve-barc](http://www.enterpriseve.com/backup-and-restore-ceph-proxmox-ve/)
@@ -28,49 +27,52 @@ Usage:
     eve4pve-barc <COMMAND> [ARGS] [OPTIONS]
     eve4pve-barc help
     eve4pve-barc version
- 
-    eve4pve-barc create  --vmid=<string> --label=<string> --path=<string> --keep=<integer>
-                         --script=<string> --unprotect-snap --syslog
-    eve4pve-barc destroy --vmid=<string> --label=<string> --path=<string> 
-    eve4pve-barc enable  --vmid=<string> --label=<string> --path=<string> 
-    eve4pve-barc disable --vmid=<string> --label=<string> --path=<string> 
 
-    eve4pve-barc backup  --vmid=<string> --label=<string> --path=<string> --keep=<integer>
-                         --script=<string> --unprotect-snap --syslog 
-    eve4pve-barc restore --vmid=<string> --label=<string> --path=<string>
-                         --script=<string> --syslog 
+    eve4pve-barc create   --vmid=<string> --label=<string> --path=<string> --keep=<integer>
+                          --script=<string> --mail=<string> --unprotect-snap --syslog
+    eve4pve-barc destroy  --vmid=<string> --label=<string> --path=<string>
+    eve4pve-barc enable   --vmid=<string> --label=<string> --path=<string>
+    eve4pve-barc disable  --vmid=<string> --label=<string> --path=<string>
 
-    eve4pve-barc status  --vmid=<string> --label=<string> --path=<string>   
-    eve4pve-barc clean   --vmid=<string> --label=<string> --path=<string> --keep=<integer>
-    eve4pve-barc reset   --vmid=<string> --label=<string> 
+    eve4pve-barc backup   --vmid=<string> --label=<string> --path=<string> --keep=<integer>
+                          --script=<string> --mail=<string> --unprotect-snap --syslog
+    eve4pve-barc restore  --vmid=<string> --label=<string> --path=<string>
+                          --script=<string> --syslog
 
+    eve4pve-barc status   --vmid=<string> --label=<string> --path=<string>
+    eve4pve-barc clean    --vmid=<string> --label=<string> --path=<string> --keep=<integer>
+    eve4pve-barc reset    --vmid=<string> --label=<string>
+    eve4pve-barc assemble --vmid=<string> --label=<string> --path=<string>
+                          --script=<string>
 Commands:
-    version              Show version program.
-    help                 Show help program.
-    create               Create backup job from scheduler.
-    destroy              Remove backup job from scheduler.
-    enable               Enable backup job from scheduler.
-    disable              Disable backup job from scheduler.
-    status               Get list of all backups.
-    clean                Clear all backup.
-    reset                Remove all snapshots on images specific vm in Ceph.
-    backup               Will backup one time.
-    restore              Will restore one time.
+    version              Show version program
+    help                 Show help program
+    create               Create backup job from scheduler
+    destroy              Remove backup job from scheduler
+    enable               Enable backup job from scheduler
+    disable              Disable backup job from scheduler
+    status               Get list of all backups
+    clean                Clear all backup
+    reset                Remove all snapshots on images specific vm in Ceph
+    backup               Will backup one time
+    restore              Will restore image one time
+    assemble             Assemble a unique image with diff file. (Require eve4ceph-mdti)
 
 Options:
-    --vmid=              The ID of the VM, comma separated (es. 100,101,102), 
+    --vmid               The ID of the VM, comma separated (es. 100,101,102),
                          'all-???' for all known guest systems in specific host (es. all-pve1, all-$(hostname)),
-                         'all' for all known guest systems in cluster.
-    --label=             Is usually 'hourly', 'daily', 'weekly', or 'monthly'.
-    --path=              Path destination backup.
-    --keep=              Specify the number of backup which should will keep, Default 1.
-    --script=            Use specified hook script.
+                         'all' for all known guest systems in cluster
+    --label              Is usually 'hourly', 'daily', 'weekly', or 'monthly'
+    --path               Path destination backup
+    --keep               Specify the number of backup which should will keep, Default 1
+    --script             Use specified hook script
                          Es. /usr/share/doc/eve4pve-barc/examples/script-hook.sh
-    --syslog             Write messages into the system log.
-    --unprotect-snap     Disable protection snapshot, default is protected. 
+    --syslog             Write messages into the system log
+    --mail               Email addresses send log backup, comma separated (es. info@domain.ltd,info1@domain.ltd)
+    --unprotect-snap     Disable protection snapshot, default is protected.
                          In Proxmox VE 'protected snapshot' cause problem in remove VM/CT see documentation.
 
-Report bugs to <support@enterpriseve.com>. 
+Report bugs to <support@enterpriseve.com>.
 ```
 
 # Introduction
@@ -94,6 +96,8 @@ For *continuous data protection* see [eve4pve-autosnap](https://github.com/Enter
 * Show size of backup and incremental
 * Check 'No backup' flag in disk configuration
 * Protected/unprotected snap mode
+* Notification via email
+* Assemble image from diff require [eve4ceph-mdti](https://github.com/EnterpriseVE/eve4ceph-mdti)
 
 # Protected / unprotected snapshot
 During backup snapshot is created in protected mode, to avoid accidental deletion.
@@ -105,7 +109,7 @@ Whit parameter **--unprotect-snap** is possible to disable protection snap.
 # Configuration and use
 Download package eve4pve-barc_?.?.?-?_all.deb, on your Proxmox VE host and install:
 ```
-wget https://github.com/EnterpriseVE/eve4pve-barc/releases/latest
+wget https://github.com/EnterpriseVE/eve4pve-barc/releases/download/?.?.?/eve4pve-barc_?.?.?_all.deb
 dpkg -i eve4pve-barc_?.?.?-?_all.deb
 ```
 This tool need basically no configuration.
@@ -157,7 +161,6 @@ VM  TYPE SIZE   BACKUP            IMAGE
 112 img     10G 17-02-08 17:22:54 pool-rbd.vm-112-disk-1
 112 diff   7.4M 17-02-08 17:26:42 pool-rbd.vm-112-disk-1
 112 diff   1.9M 17-02-08 17:27:33 pool-rbd.vm-112-disk-1
-
 ```
 
 ## Restore a VM one time
@@ -199,6 +202,110 @@ Importing image diff: 100% complete...done.
 Removing all snapshots: 100% complete...done.
 Backup pool-rbd.vm-111-disk-1 restored in pool-rbd/vm-111-disk-1-restored with success!
 Consider to manually create VM/CT and change config file from backup adapting restored image.
+```
+
+## Assemble make a unique image with diff file.
+```
+root@pve1:~# eve4pve-barc assemble --vmid=111 --label='daily' --path=/mnt/bckceph
+```
+### Select image
+![alt text](./docs/assemble1.png "Select image restore")
+
+### Select time
+![alt text](./docs/assemble2.png "Select time restore")
+
+### Confim assemble
+![alt text](./docs/assemble3.png "Confirm assemble")
+
+```
+Start assemble process
+Copy image to '/mnt/bckceph/barc/111/daily/assemble-hdd-pool.vm-111-disk-1'
+Assemble /mnt/bckceph/barc/111/daily/170917212942hdd-pool.vm-111-disk-1.diff
+Reading metadata
+From snap: barcdaily170917211532
+To snap: barcdaily170917212942
+Image size: 107374182400 (100GB)
+End of metadata
+End of data
+Writing 22540800 bytes to image
+Assemble /mnt/bckceph/barc/111/daily/170918162610hdd-pool.vm-111-disk-1.diff
+Reading metadata
+From snap: barcdaily170917212942
+To snap: barcdaily170918162610
+Image size: 107374182400 (100GB)
+End of metadata
+End of data
+Writing 237973504 bytes to image
+Assemble /mnt/bckceph/barc/111/daily/170918164846hdd-pool.vm-111-disk-1.diff
+Reading metadata
+From snap: barcdaily170918162610
+To snap: barcdaily170918164846
+Image size: 107374182400 (100GB)
+End of metadata
+End of data
+Writing 35502592 bytes to image
+Assemble /mnt/bckceph/barc/111/daily/170918172839hdd-pool.vm-111-disk-1.diff
+Reading metadata
+From snap: barcdaily170918164846
+To snap: barcdaily170918172839
+Image size: 107374182400 (100GB)
+End of metadata
+End of data
+Writing 89499136 bytes to image
+Assemble /mnt/bckceph/barc/111/daily/170918173008hdd-pool.vm-111-disk-1.diff
+Reading metadata
+From snap: barcdaily170918172839
+To snap: barcdaily170918173008
+Image size: 107374182400 (100GB)
+End of metadata
+End of data
+Writing 2568192 bytes to image
+Assemble /mnt/bckceph/barc/111/daily/170918174248hdd-pool.vm-111-disk-1.diff
+Reading metadata
+From snap: barcdaily170918173008
+To snap: barcdaily170918174248
+Image size: 107374182400 (100GB)
+End of metadata
+End of data
+Writing 18404864 bytes to image
+Assemble /mnt/bckceph/barc/111/daily/170918174430hdd-pool.vm-111-disk-1.diff
+Reading metadata
+From snap: barcdaily170918174248
+To snap: barcdaily170918174430
+Image size: 107374182400 (100GB)
+End of metadata
+End of data
+Writing 2912256 bytes to image
+Assemble /mnt/bckceph/barc/111/daily/170918175731hdd-pool.vm-111-disk-1.diff
+Reading metadata
+From snap: barcdaily170918174430
+To snap: barcdaily170918175731
+Image size: 107374182400 (100GB)
+End of metadata
+End of data
+Writing 38584320 bytes to image
+Assemble /mnt/bckceph/barc/111/daily/170918175801hdd-pool.vm-111-disk-1.diff
+Reading metadata
+From snap: barcdaily170918175731
+To snap: barcdaily170918175801
+Image size: 107374182400 (100GB)
+End of metadata
+End of data
+Writing 1202176 bytes to image
+Assemble /mnt/bckceph/barc/111/daily/170918181005hdd-pool.vm-111-disk-1.diff
+Reading metadata
+From snap: barcdaily170918175801
+To snap: barcdaily170918181005
+Image size: 107374182400 (100GB)
+End of metadata
+End of data
+Writing 29091840 bytes to image
+Backup hdd-pool.vm-111-disk-1 assebled in assemble-hdd-pool.vm-111-disk-1 with success!
+```
+
+Mount image. For ntfs using offset 1048576 
+```
+mount -o loop,offset=1048576 assemble-hdd-pool.vm-11-disk-1.assimg /mnt/imgbck/
 ```
 
 ## Changing parameters

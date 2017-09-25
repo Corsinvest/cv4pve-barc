@@ -3,7 +3,7 @@
 # EnterpriseVE Backup And Restore Ceph for Proxmox VE.
 # Author: Daniele Corsini <daniele.corsini@enterpriseve.com>
 
-declare -r VERSION=0.1.5
+declare -r VERSION=0.1.6
 declare -r NAME=$(basename "$0")
 declare -r PROGNAME=${NAME%.*}
 
@@ -14,6 +14,8 @@ declare -r QEMU='qemu-server'
 declare -r LXC='lxc'
 declare -r QEMU_CONF_CLUSTER="$PVE_NODES/*/$QEMU"
 declare -r LXC_CONF_CLUSTER="$PVE_NODES/*/$LXC"
+
+declare -r LOG_FILE=$(mktemp)
 
 declare -r EXT_IMAGE='.img'
 declare -r EXT_DIFF='.diff'
@@ -28,6 +30,7 @@ declare -i opt_dry_run=0
 declare opt_path_backup=''
 declare opt_label=''
 declare opt_script=''
+declare opt_addr_mail=''
 declare -i opt_unprotect_snap=0
 
 declare snap_name_prefix=''
@@ -59,45 +62,48 @@ Usage:
     $PROGNAME help
     $PROGNAME version
  
-    $PROGNAME create  --vmid=<string> --label=<string> --path=<string> --keep=<integer>
-                         --script=<string> --unprotect-snap --syslog 
-    $PROGNAME destroy --vmid=<string> --label=<string> --path=<string> 
-    $PROGNAME enable  --vmid=<string> --label=<string> --path=<string> 
-    $PROGNAME disable --vmid=<string> --label=<string> --path=<string> 
+    $PROGNAME create   --vmid=<string> --label=<string> --path=<string> --keep=<integer>
+                          --script=<string> --mail=<string> --unprotect-snap --syslog 
+    $PROGNAME destroy  --vmid=<string> --label=<string> --path=<string> 
+    $PROGNAME enable   --vmid=<string> --label=<string> --path=<string> 
+    $PROGNAME disable  --vmid=<string> --label=<string> --path=<string> 
 
-    $PROGNAME backup  --vmid=<string> --label=<string> --path=<string> --keep=<integer>
-                         --script=<string> --unprotect-snap --syslog 
-    $PROGNAME restore --vmid=<string> --label=<string> --path=<string>
-                         --script=<string> --syslog 
+    $PROGNAME backup   --vmid=<string> --label=<string> --path=<string> --keep=<integer>
+                          --script=<string> --mail=<string> --unprotect-snap --syslog 
+    $PROGNAME restore  --vmid=<string> --label=<string> --path=<string>
+                          --script=<string> --syslog 
 
-    $PROGNAME status  --vmid=<string> --label=<string> --path=<string>   
-    $PROGNAME clean   --vmid=<string> --label=<string> --path=<string> --keep=<integer>
-    $PROGNAME reset   --vmid=<string> --label=<string>   
-
+    $PROGNAME status   --vmid=<string> --label=<string> --path=<string>   
+    $PROGNAME clean    --vmid=<string> --label=<string> --path=<string> --keep=<integer>
+    $PROGNAME reset    --vmid=<string> --label=<string>   
+    $PROGNAME assemble --vmid=<string> --label=<string> --path=<string>
+                          --script=<string> 
 Commands:
-    version              Show version program.
-    help                 Show help program.
-    create               Create backup job from scheduler.
-    destroy              Remove backup job from scheduler.
-    enable               Enable backup job from scheduler.
-    disable              Disable backup job from scheduler.
-    status               Get list of all backups.
-    clean                Clear all backup.
-    reset                Remove all snapshots on images specific vm in Ceph.
-    backup               Will backup one time.
-    restore              Will restore image one time.
+    version              Show version program
+    help                 Show help program
+    create               Create backup job from scheduler
+    destroy              Remove backup job from scheduler
+    enable               Enable backup job from scheduler
+    disable              Disable backup job from scheduler
+    status               Get list of all backups
+    clean                Clear all backup
+    reset                Remove all snapshots on images specific vm in Ceph
+    backup               Will backup one time
+    restore              Will restore image one time
+    assemble             Assemble a unique image with diff file. (Require eve4ceph-mdti)
 
 Options:
-    --vmid=              The ID of the VM, comma separated (es. 100,101,102), 
+    --vmid               The ID of the VM, comma separated (es. 100,101,102), 
                          'all-???' for all known guest systems in specific host (es. all-pve1, all-\$(hostname)),
-                         'all' for all known guest systems in cluster.
-    --label=             Is usually 'hourly', 'daily', 'weekly', or 'monthly'.
-    --path=              Path destination backup.
-    --keep=              Specify the number of backup which should will keep, Default 1.
-    --script=            Use specified hook script.
+                         'all' for all known guest systems in cluster
+    --label              Is usually 'hourly', 'daily', 'weekly', or 'monthly'
+    --path               Path destination backup
+    --keep               Specify the number of backup which should will keep, Default 1
+    --script             Use specified hook script
                          Es. /usr/share/doc/$PROGNAME/examples/script-hook.sh
-    --syslog             Write messages into the system log.
-    --unprotect-snap     Disable protection snapshot, default is protected. 
+    --syslog             Write messages into the system log
+    --mail               Email addresses send log backup, comma separated (es. info@domain.ltd,info1@domain.ltd)
+    --unprotect-snap     Disable protection snapshot, default is protected.
                          In Proxmox VE 'protected snapshot' cause problem in remove VM/CT see documentation.
 
 Report bugs to <support@enterpriseve.com>. 
@@ -112,20 +118,28 @@ function log(){
     local message=$*
 
     case $level in
-        debug) [ $opt_debug -eq 1 ] && echo -e "$(date "+%F %T") DEBUG: $message";;
-        
+        debug) 
+            if [ $opt_debug -eq 1 ]; then
+                echo -e "$(date "+%F %T") DEBUG: $message";
+                echo -e "$(date "+%F %T") DEBUG: $message" >> "$LOG_FILE";
+            fi    
+            ;;
+
         info) 
             echo -e "$message"; 
+            echo -e "$message" >> "$LOG_FILE";
             [ $opt_syslog -eq 1 ] && logger -t "$PROGNAME" "$message"
             ;;
         
         error)
             echo "ERROR: $message" 1>&2
+            echo -e "$message" >> "$LOG_FILE";            
             [ $opt_syslog -eq 1 ] && logger -t "$PROGNAME" -p daemon.err "$message"
             ;;
 
         *)  
             echo "$message" 1>&2
+            echo -e "$message" >> "$LOG_FILE";            
             [ $opt_syslog -eq 1 ] && logger -t "$PROGNAME" "$message"
             ;;
     esac
@@ -164,11 +178,11 @@ function parse_opts(){
     local args
     args=$(getopt \
            --options '' \
-           --longoptions=path:,vmid:,label:,keep: \
+           --longoptions=path:,vmid:,label:,keep:,mail: \
            --longoptions=script:,syslog,debug,dry-run,unprotect-snap \
            --name "$PROGNAME" \
            -- "$@") \
-           || exit 128
+           || end_process 128
 
     eval set -- "$args"
 
@@ -183,16 +197,17 @@ function parse_opts(){
         --debug) opt_debug=1; shift;;
         --dry-run) opt_dry_run=1; shift;;
         --unprotect-snap) opt_unprotect_snap=1; shift;;
+        --mail) opt_addr_mail="$2"; shift 2;;
         --) shift; break;;
         *) break;;
       esac
     done
 
     if [ "$action" != "reset" ]; then
-        [ ! -d "$opt_path_backup" ] && { log info "Path Backup is not set"; exit 1; }
+        [ ! -d "$opt_path_backup" ] && { log info "Path Backup is not set"; end_process 1; }
     fi
 
-    [ -z "$opt_vm_ids" ] && { log info "VM id is not set."; exit 1; }
+    [ -z "$opt_vm_ids" ] && { log info "VM id is not set."; end_process 1; }
     if [ "$opt_vm_ids" = "all" ]; then
         #all in cluster
 
@@ -207,12 +222,12 @@ function parse_opts(){
         
         if ! exist_file "$PVE_NODES/$host"; then
             log info "Host not found!"
-            exit 1
+            end_process 1
         fi
 
         local data=''
         data=$(get_vm_ids "$PVE_NODES/$host/$QEMU/*$EXT_CONF" "$PVE_NODES/$host/$LXC/*$EXT_CONF")
-        [ -z "$data" ] && { log info "VM id is not set."; exit 1; }
+        [ -z "$data" ] && { log info "VM id is not set."; end_process 1; }
 
         vm_ids=$(echo "$data" | tr ',' '\n')
 
@@ -221,8 +236,8 @@ function parse_opts(){
         vm_ids=$(echo "$opt_vm_ids" | tr ',' '\n')
     fi
 
-    [ -z "$opt_label" ] && { log info "Label is not set correctly"; exit 1; }
-    [ "$opt_keep" -le 0 ] && { log info "Keep is not set correctly. Value > 0."; exit 1; }
+    [ -z "$opt_label" ] && { log info "Label is not set correctly"; end_process 1; }
+    [ "$opt_keep" -le 0 ] && { log info "Keep is not set correctly. Value > 0."; end_process 1; }
 
     snap_name_prefix="barc$opt_label"
 }
@@ -272,6 +287,7 @@ EOL
             [ -e "$opt_script" ] && job="$job --script='$opt_script'"
             [ $opt_unprotect_snap -eq 1 ] && job="$job --unprotect-snap"
             [ $opt_syslog -eq 1 ] && job="$job --syslog"     
+            [ ! -z "$opt_addr_mail" ] && job="$job --mail='$opt_addr_mail'"  
 
             echo -e "$job" >> "$cron_file"
             ;;
@@ -397,9 +413,12 @@ function call_hook_script(){
 }
 
 function backup(){
+    local -i rc=0;
+
     parse_opts "$@"
 
     local timestamp; timestamp=$(date +%y%m%d%H%M%S)
+    log info "Start backup $(date "+%F %T")"
 
     #create pid file
     local pid_file="/var/run/$PROGNAME.pid"
@@ -407,13 +426,13 @@ function backup(){
         local pid; pid=$(cat "${pid_file}")
         if ps -p "$pid" > /dev/null 2>&1; then
           log error "Process already running with pid ${pid}"
-          exit 1
+          end_process 1
         fi
     fi
 
     if ! echo $$ > "$pid_file"; then
         log error "Could not create PID file $pid_file"
-        exit 1
+        end_process 1
     fi
 
     call_hook_script "backup-job-start" "-" "-"
@@ -426,6 +445,7 @@ function backup(){
         get_path
         if ! mkdir -p "$path_backup"; then
             log error "VM $vm_id - Problem creation path '$path_backup'"
+            rc=10
             continue
         fi
 
@@ -438,7 +458,15 @@ function backup(){
                 grep -v -P 'backup=0' | \
                 awk '{ split($0,a,","); split(a[1],b," "); print b[2]}')
    
-        #decode disk
+
+        local -a export_current_snap
+        local -a export_latest_snap
+        local -a export_backup_file
+        local -a export_image_spec
+        local -a export_type
+        local -i export_idx=0
+
+        #loop disk create snapshot
         local disk=''
         for disk in $disks; do
             #check rbd device image-spec is pool-name/image-name
@@ -459,6 +487,11 @@ function backup(){
 
             log info "VM $vm_id - ======== Ceph Image '$image_spec' ======== "
 
+            #data export
+            export_current_snap[$export_idx]="$current_snap"
+            export_image_spec[$export_idx]="$image_spec"
+            export_latest_snap[$export_idx]=""
+
             #check exist initial export
             if ! exist_file "$path_backup/*$suffix_backup_file$EXT_IMAGE"; then
                 #initial export not exist            
@@ -468,23 +501,7 @@ function backup(){
                     break;
                 fi
 
-                #export initial
-                call_hook_script "export-pre" "$current_snap" "$backup_file"
-
-                log info "VM $vm_id - Export initial '$backup_file'"
-                if ! do_run "rbd export --rbd-concurrent-management-ops 20 $current_snap '$backup_file'"; then
-                    remove_snaphot "$current_snap" 0
-
-                    call_hook_script "export-abort" "$current_snap" "$backup_file"
-
-                    log info "VM $vm_id - Remove file '$backup_file'"
-                    rm -f "$backup_file"
-
-                    break;
-                fi
-                log info "VM $vm_id - Size $(get_size_file "$backup_file")"
-
-                call_hook_script "export-post" "$current_snap" "$backup_file"
+                export_type[$export_idx]=0
 
             else
                 #incremental backup
@@ -511,7 +528,8 @@ function backup(){
 
                 if ! exist_file "$path_backup/$tms_latest_snap$suffix_backup_file.*"; then
                     log error "VM $vm_id - Ceph snapshot '$image_spec@$latest_snap' not found in backup '$path_backup/$tms_latest_snap$suffix_backup_file.*'";                    
-                    call_hook_script "export-diff-abort" "-" "-"                 
+                    call_hook_script "export-diff-abort" "-" "-"  
+                    rc=20                         
                     break;
                 fi
 
@@ -526,7 +544,8 @@ function backup(){
 
                 if ! rbd snap ls "$image_spec" | awk '{print $2}' | grep -q "$latest_backup"; then
                     log error "VM $vm_id - Backup '$latest_backup' not found in ceph '$image_spec' snapshot!";                    
-                    call_hook_script "export-diff-abort" "-" "-"                
+                    call_hook_script "export-diff-abort" "-" "-" 
+                    rc=30                        
                     break;
                 fi
                 
@@ -534,6 +553,45 @@ function backup(){
                   break;
                 fi
 
+                export_latest_snap[$export_idx]="$latest_snap"
+                export_type[$export_idx]=1
+             
+            fi
+
+            export_backup_file[$export_idx]="$backup_file"
+
+            let export_idx++
+        done
+
+        #loop export file from Ceph
+        for (( i=0; i<${#export_current_snap[@]}; i++ )); do
+            local current_snap=${export_current_snap[$i]};
+            local backup_file=${export_backup_file[$i]};
+            local latest_snap=${export_latest_snap[$i]};
+            local current_snap=${export_current_snap[$i]};
+            local image_spec=${export_image_spec[$i]};
+
+            if [ ${export_type[$i]} -eq 0 ]; then
+                #export initial
+
+                call_hook_script "export-pre" "$current_snap" "$backup_file"
+
+                log info "VM $vm_id - Export initial '$backup_file'"
+                if ! do_run "rbd export --rbd-concurrent-management-ops 20 $current_snap '$backup_file'"; then
+                    remove_snaphot "$current_snap" 0
+
+                    call_hook_script "export-abort" "$current_snap" "$backup_file"
+
+                    log info "VM $vm_id - Remove file '$backup_file'"
+                    rm -f "$backup_file"
+
+                    break;
+                fi
+                log info "VM $vm_id - Size $(get_size_file "$backup_file")"
+
+                call_hook_script "export-post" "$current_snap" "$backup_file"
+
+            else
                 #export-diff difference previus snapshot 
                 call_hook_script "export-diff-pre" "$current_snap" "$backup_file"
 
@@ -556,7 +614,7 @@ function backup(){
                 remove_snaphot "$image_spec@$latest_snap" 1
             fi
         done
-        
+
         #copy config files
         log info "VM $vm_id - Copy config"
         do_run "cp '$file_config' '$path_backup/$timestamp$EXT_CONF'"
@@ -576,6 +634,11 @@ function backup(){
     rm "$pid_file"
 
     call_hook_script "backup-job-end" "-" "-"        
+
+    timestamp=$(date +%y%m%d%H%M%S)
+    log info "End backup $(date "+%F %T")"
+
+    end_process $rc 
 }
 
 function get_size_file(){
@@ -764,7 +827,7 @@ function restore(){
 
         call_hook_script "restore-job-start" "-" "-"
 
-        log info "Start restore process"    
+        log info "Start restore $(date "+%F %T")"
 
         local backup=''
         for backup in $path_backup/*$image*; do
@@ -795,6 +858,8 @@ function restore(){
         log info "Consider to manually create VM/CT and change config file from backup adapting restored image."    
 
         call_hook_script "restore-job-end" "-" "-"
+
+        log info "End restore $(date "+%F %T")"
 
         break;
     done
@@ -837,6 +902,91 @@ function status(){
     done
 }
 
+function assemble(){
+    local cmd_assemble; cmd_assemble=$(which eve4ceph-mdti 2>/dev/null)
+    [ -z "$cmd_assemble" ] && { log error "eve4ceph-mdti (Merge Diff file To Image for Ceph) command not found. See https://github.com/EnterpriseVE/eve4ceph-mdti"; exit 1; }
+
+    parse_opts "$@"
+
+    for vm_id in $vm_ids; do
+        get_path   
+
+        local title="EnterpriseVE BARC | Assemble"
+
+        #list all image available 
+        images=($(ls "$path_backup/"*$EXT_IMAGE | \
+                  xargs -n 1 basename | \
+                  awk '{printf "%s %s\n",substr($1,13,length($1)-16),substr($1,13,length($1)-16)}'))
+
+        #select image to recovery
+        local image;
+        image=$(whiptail --title "$title" \
+                --menu "Choose from available images:" \
+                --notags 25 60 14 "${images[@]}" 3>&1 1>&2 2>&3)
+
+        [ -z "$image" ] && exit 1
+
+        #list all date available 
+        timestamps=($(ls -r "$path_backup/"*$image* | \
+                      xargs -n 1 basename | \
+                      awk '{print substr($1,1,12),substr($1,1,2) "-" substr($1,3,2) "-" substr($1,5,2) "_" substr($1,7,2) ":" substr($1,9,2) ":" substr($1,11,2)}'))
+
+        #select timestamp
+        local timestamp
+        timestamp=$(whiptail --title "$title" \
+                    --menu "Choose from available date [$image]:" \
+                    --notags 25 60 14 "${timestamps[@]}" 3>&1 1>&2 2>&3)
+
+        [ -z "$timestamp" ] && exit 1
+
+        local new_image="assemble-$image" 
+        if ! whiptail --title "$title" --yesno "Confrim assemble $image in $new_image?" 8 78; then
+            exit 1
+        fi
+
+        call_hook_script "assemble-job-start" "-" "-"
+        log info "Start assemble process"
+
+        log info "Copy image to '$path_backup/$new_image'"
+        do_run "cp $path_backup/*$image$EXT_IMAGE '$path_backup/$new_image$EXT_IMAGE'"
+
+        #loop image and assemble
+        local backup=''
+        for backup in $path_backup/*$image*; do
+            if [[ $backup == *"$EXT_DIFF" ]]; then
+                log info "Assemble $backup"
+                do_run "$cmd_assemble '$path_backup/$new_image$EXT_IMAGE' '$backup'"
+            fi
+
+            [[ $backup == "$path_backup/$timestamp.$image"* ]] && break;        
+        done     
+
+        log info "Backup $image assebled in $new_image with success!"    
+
+        call_hook_script "assemble-job-end" "-" "-"
+
+        break;
+    done
+}
+
+function end_process(){
+    local -i rc=$1;
+
+    local subject="Log $NAME"
+    [ $rc != 0 ] && subject="$subject [ERROR]"
+
+    #send email
+    local mail;
+    for mail in $(echo "$opt_addr_mail" | tr "," "\n"); do
+        do_run "cat '$LOG_FILE' | mail -s '$subject' '$mail'"
+    done
+
+    #remove log
+    rm "$LOG_FILE"
+
+    exit "$rc";
+}
+
 function main(){    
     [ $# = 0 ] && usage;
 
@@ -850,6 +1000,7 @@ function main(){
         clean) clean "$@";;
         status) status "$@";; 
         reset) reset "$@";; 
+        assemble) assemble "$@";; 
         *) usage;;
     esac
 

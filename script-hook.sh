@@ -45,6 +45,10 @@ hook() {
         restore-job-start);;
         restore-job-end);;
 
+        #assemble job status
+        assemble-job-start);;
+        assemble-job-end);;
+
         *) echo "unknown phase '$EVE4PVE_BARC_PHASE'"; return 1;;
     esac
 }
