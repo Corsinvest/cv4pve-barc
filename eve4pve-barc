@@ -3,7 +3,7 @@
 # EnterpriseVE Backup And Restore Ceph for Proxmox VE.
 # Author: Daniele Corsini <daniele.corsini@enterpriseve.com>
 
-declare -r VERSION=0.1.6
+declare -r VERSION=0.1.7
 declare -r NAME=$(basename "$0")
 declare -r PROGNAME=${NAME%.*}
 
@@ -37,8 +37,6 @@ declare snap_name_prefix=''
 declare path_backup=''
 declare -i vm_id=0
 declare -A vm_ids
-declare file_config=''
-
 function usage(){
    shift
 
@@ -412,10 +410,31 @@ function call_hook_script(){
     fi
 }
 
+function get_disks_from_config(){
+    local disks;
+    local file_config=$1
+
+    #disks available for vm/ct
+    #exclude no backup
+    #read current config
+    disks=$(while read -r line; do
+                [[ "$line" == "" ]] && break
+                echo "$line" 
+            done < "$file_config" | \
+            grep -P '^(?:((?:virtio|ide|scsi|sata|mp)\d+)|rootfs): ' | \
+            grep -v -P 'cdrom|none' | \
+            grep -v -P 'backup=0' | \
+            awk '{ split($0,a,","); split(a[1],b," "); print b[2]}')
+
+    echo "$disks"
+}
+
 function backup(){
     local -i rc=0;
 
     parse_opts "$@"
+
+    log info "EnterpriseVE BARC | Backup"
 
     local timestamp; timestamp=$(date +%y%m%d%H%M%S)
     log info "Start backup $(date "+%F %T")"
@@ -438,7 +457,7 @@ function backup(){
     call_hook_script "backup-job-start" "-" "-"
 
     for vm_id in $vm_ids; do
-        get_config_file
+        local file_config; file_config=$(get_config_file)        
         [ -z "$file_config" ] && continue
 
         #create path backup
@@ -449,48 +468,39 @@ function backup(){
             continue
         fi
 
-        #disks available for vm/ct
-        #exclude no backup
-        local disks;
-        disks=$(cat "$file_config" | \
-                grep -P '^(?:((?:virtio|ide|scsi|sata|mp)\d+)|rootfs): ' | \
-                grep -v -P 'cdrom|none' | \
-                grep -v -P 'backup=0' | \
-                awk '{ split($0,a,","); split(a[1],b," "); print b[2]}')
-   
-
-        local -a export_current_snap
-        local -a export_latest_snap
-        local -a export_backup_file
         local -a export_image_spec
+        local -a export_current_snap
+        local -a export_backup_file
+        local -a export_latest_snap
         local -a export_type
         local -i export_idx=0
 
+        local image_spec
+        local current_snap
+        local backup_file
+        local latest_snap
+
+        log info "VM $vm_id - ======== Start backup ========"
+        log info "VM $vm_id - -------- Snapshots Disks --------"
+
         #loop disk create snapshot
         local disk=''
-        for disk in $disks; do
+        for disk in $(get_disks_from_config "$file_config"); do
             #check rbd device image-spec is pool-name/image-name
-            local image_spec; 
-
-            #if krbd enable
-            image_spec=$(pvesm path "$disk" | grep '^/dev/rbd/' | sed -e "s/^\/dev\/rbd\///")
-            if [ -z "$image_spec" ]; then
-                image_spec=$(pvesm path "$disk" | grep '/ceph/' | awk '{ split($0,a,":"); print a[2]}')
-                [ -z "$image_spec" ] && continue 
-            fi
+            image_spec=$(get_image_spec "$disk")
+            [ -z "$image_spec" ] && continue 
 
             #pool-name/image-name@snap-name
-            local current_snap="$image_spec@$snap_name_prefix$timestamp"
+            current_snap="$image_spec@$snap_name_prefix$timestamp"
 
             local suffix_backup_file=${image_spec//\//.}
-            local backup_file="$path_backup/$timestamp$suffix_backup_file"
-
-            log info "VM $vm_id - ======== Ceph Image '$image_spec' ======== "
+            backup_file="$path_backup/$timestamp$suffix_backup_file"
 
             #data export
             export_current_snap[$export_idx]="$current_snap"
             export_image_spec[$export_idx]="$image_spec"
             export_latest_snap[$export_idx]=""
+            export_type[$export_idx]=""
 
             #check exist initial export
             if ! exist_file "$path_backup/*$suffix_backup_file$EXT_IMAGE"; then
@@ -498,17 +508,17 @@ function backup(){
                 backup_file="$backup_file$EXT_IMAGE"
                 
                 if ! create_snapshot "$current_snap"; then
+                    rc=20                         
                     break;
                 fi
 
-                export_type[$export_idx]=0
+                export_type[$export_idx]="image"
 
             else
                 #incremental backup
                 backup_file="$backup_file$EXT_DIFF"
 
                 #find last snapshot in ceph
-                local latest_snap
                 latest_snap=$(rbd snap ls "$image_spec" | \
                               awk '{print $2}' | \
                               grep "$opt_label" | sort -r | head -n 1)
@@ -517,6 +527,7 @@ function backup(){
                 if [ -z "$latest_snap" ]; then
                     log error "VM $vm_id - Ceph last snapshot '$image_spec' not found!";                    
                     call_hook_script "export-diff-abort" "-" "-"                 
+                    rc=30                         
                     break;
                 fi
 
@@ -529,7 +540,7 @@ function backup(){
                 if ! exist_file "$path_backup/$tms_latest_snap$suffix_backup_file.*"; then
                     log error "VM $vm_id - Ceph snapshot '$image_spec@$latest_snap' not found in backup '$path_backup/$tms_latest_snap$suffix_backup_file.*'";                    
                     call_hook_script "export-diff-abort" "-" "-"  
-                    rc=20                         
+                    rc=40                         
                     break;
                 fi
 
@@ -545,16 +556,17 @@ function backup(){
                 if ! rbd snap ls "$image_spec" | awk '{print $2}' | grep -q "$latest_backup"; then
                     log error "VM $vm_id - Backup '$latest_backup' not found in ceph '$image_spec' snapshot!";                    
                     call_hook_script "export-diff-abort" "-" "-" 
-                    rc=30                        
+                    rc=50                        
                     break;
                 fi
                 
                 if ! create_snapshot "$current_snap"; then
-                  break;
+                    rc=60                        
+                    break;
                 fi
 
                 export_latest_snap[$export_idx]="$latest_snap"
-                export_type[$export_idx]=1
+                export_type[$export_idx]="diff"
              
             fi
 
@@ -563,17 +575,18 @@ function backup(){
             let export_idx++
         done
 
+        log info "VM $vm_id - -------- Export images -------- "
+
         #loop export file from Ceph
         for (( i=0; i<${#export_current_snap[@]}; i++ )); do
-            local current_snap=${export_current_snap[$i]};
-            local backup_file=${export_backup_file[$i]};
-            local latest_snap=${export_latest_snap[$i]};
-            local current_snap=${export_current_snap[$i]};
-            local image_spec=${export_image_spec[$i]};
+            image_spec=${export_image_spec[$i]};
+            current_snap=${export_current_snap[$i]};
+            backup_file=${export_backup_file[$i]};
+            latest_snap=${export_latest_snap[$i]};
+            type=${export_type[$i]};
 
-            if [ ${export_type[$i]} -eq 0 ]; then
+            if [ "$type" == "image" ]; then
                 #export initial
-
                 call_hook_script "export-pre" "$current_snap" "$backup_file"
 
                 log info "VM $vm_id - Export initial '$backup_file'"
@@ -591,8 +604,8 @@ function backup(){
 
                 call_hook_script "export-post" "$current_snap" "$backup_file"
 
-            else
-                #export-diff difference previus snapshot 
+            elif [ "$type" == "diff" ]; then
+                #export-diff difference previous snapshot 
                 call_hook_script "export-diff-pre" "$current_snap" "$backup_file"
 
                 log info "VM $vm_id - Export diff '$backup_file'"
@@ -610,22 +623,23 @@ function backup(){
 
                 call_hook_script "export-diff-post" "$current_snap" "$backup_file"
 
-                #remove previus snapshot
+                #remove previous snapshot
                 remove_snaphot "$image_spec@$latest_snap" 1
             fi
         done
 
         #copy config files
-        log info "VM $vm_id - Copy config"
+        log info "VM $vm_id - -------- Copy config --------"
         do_run "cp '$file_config' '$path_backup/$timestamp$EXT_CONF'"
 
         #copy firewall files
         local file_firewall="$PVE_FIREWALL/$vm_id$EXT_FIREWALL"
         if [ -e "$file_firewall" ]; then
-            log info "VM $vm_id - Copy firewall"
+            log info "VM $vm_id - -------- Copy firewall --------"
             do_run "cp '$file_firewall' '$path_backup/$timestamp$EXT_FIREWALL'"
         fi
 
+        log info "VM $vm_id - -------- Merge diff file --------"
         merge_diff_backup
     done
 
@@ -707,7 +721,7 @@ function merge_diff_backup(){
 }
 
 function get_config_file(){
-    file_config=''
+    local file_config=''
 
     if exist_file "$QEMU_CONF_CLUSTER/$vm_id$EXT_CONF"; then
         file_config=$(ls $QEMU_CONF_CLUSTER/$vm_id$EXT_CONF)
@@ -717,38 +731,38 @@ function get_config_file(){
     
     else
         log error "VM $vm_id - Unknown tecnology"
-    
+
     fi 
+
+    echo "$file_config"
+}
+
+function get_image_spec(){
+    local image_spec;
+    local disk="$1"
+    
+    #if krbd enable
+    image_spec=$(pvesm path "$disk" | grep '^/dev/rbd/' | sed -e "s/^\/dev\/rbd\///")
+    if [ -z "$image_spec" ]; then
+        image_spec=$(pvesm path "$disk" | grep '/ceph/' | awk '{ split($0,a,":"); print a[2]}')
+    fi
+
+    echo "$image_spec"
 }
 
 function reset(){
     parse_opts "$@"
     
     for vm_id in $vm_ids; do
-        get_config_file
+        local file_config; file_config=$(get_config_file)        
         [ -z "$file_config" ] && continue
-
-        #disks available for vm/ct
-        #exclude no backup
-        local disks;
-        disks=$(cat "$file_config" | \
-                grep -P '^(?:((?:virtio|ide|scsi|sata|mp)\d+)|rootfs): ' | \
-                grep -v -P 'cdrom|none' | \
-                grep -v -P 'backup=0' | \
-                awk '{ split($0,a,","); split(a[1],b," "); print b[2]}')
 
         #decode disk
         local disk=''
-        for disk in $disks; do
+        for disk in $(get_disks_from_config "$file_config"); do
             #check rbd device image-spec is pool-name/image-name
-            local image_spec; 
-
-            #if krbd enable
-            image_spec=$(pvesm path "$disk" | grep '^/dev/rbd/' | sed -e "s/^\/dev\/rbd\///")
-            if [ -z "$image_spec" ]; then
-                image_spec=$(pvesm path "$disk" | grep '/ceph/' | awk '{ split($0,a,":"); print a[2]}')
-                [ -z "$image_spec" ] && continue 
-            fi
+            local image_spec; image_spec=$(get_image_spec "$disk")
+            [ -z "$image_spec" ] && continue 
 
             local snap_name
             for snap_name in $(rbd snap ls "$image_spec" | \
