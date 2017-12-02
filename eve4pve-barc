@@ -3,7 +3,7 @@
 # EnterpriseVE Backup And Restore Ceph for Proxmox VE.
 # Author: Daniele Corsini <daniele.corsini@enterpriseve.com>
 
-declare -r VERSION=0.1.7
+declare -r VERSION=0.1.8
 declare -r NAME=$(basename "$0")
 declare -r PROGNAME=${NAME%.*}
 

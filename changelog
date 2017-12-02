@@ -1,3 +1,10 @@
+eve4pve-barc (0.1.8)
+
+  * Initialize arrays to prevent values filled from previous jobs/vm #22
+  * Improve code 
+
+ -- EnterpriseVE Support Team <support@enterpriseve.com>  26 Sep 2017 11:50:01 +0100
+
 eve4pve-barc (0.1.7)
 
   * Fix problem more snapshot/configuration in config file VM/CT #16

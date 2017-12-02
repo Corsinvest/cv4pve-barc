@@ -1,9 +1,9 @@
 # eve4pve-barc
-<p align="center">
- <a href="https://www.gnu.org/licenses/gpl-3.0.en.html" target="_blank"><img src="https://img.shields.io/github/license/EnterpriseVE/eve4pve-barc.svg" alt="GNU GPL v3"></a>
-  <a href="https://gitter.im/EnterpriseVE/eve4pve-barc" target="_blank"><img src="https://badges.gitter.im/EnterpriseVE/eve4pve-barc.svg" alt="Gitter"></a>
-  <a href="https://github.com/EnterpriseVE/eve4pve-barc/releases/latest" target="_blank"><img src="https://img.shields.io/github/release/EnterpriseVE/eve4pve-barc.svg" alt="Release"></a>
-</p>
+
+[![License](https://img.shields.io/github/license/EnterpriseVE/eve4pve-barc.svg)](https://www.gnu.org/licenses/gpl-3.0.en.html)
+[![Gitter](https://badges.gitter.im/EnterpriseVE/eve4pve-barc.svg)](https://gitter.im/EnterpriseVE/eve4pve-barc)
+[![Release](https://img.shields.io/github/release/EnterpriseVE/eve4pve-barc.svg)](https://github.com/EnterpriseVE/eve4pve-barc/releases/latest)
+
 Backup And Restore Ceph for Proxmox VE
 
 [More information about eve4pve-barc](http://www.enterpriseve.com/backup-and-restore-ceph-proxmox-ve/)
@@ -13,7 +13,8 @@ Ceph Documentation
 [Incremental snapshots with rbd](http://ceph.com/dev-notes/incremental-snapshots-with-rbd/)
 
 [rdb – manage rados block device (rbd) images](http://docs.ceph.com/docs/master/man/8/rbd/)
-```
+
+```text
     ______      __                       _              _    ________
    / ____/___  / /____  _________  _____(_)_______     | |  / / ____/
   / __/ / __ \/ __/ _ \/ ___/ __ \/ ___/ / ___/ _ \    | | / / __/
@@ -75,15 +76,18 @@ Options:
 Report bugs to <support@enterpriseve.com>.
 ```
 
-# Introduction
-Backup And Restore Ceph for Proxmox VE with retention.
-This solution implement backup for Ceph cluster exporting to specific directory.
-The mechanism using Ceph snapshot, export and export differential.
-In backup export image and config file VM/CT.
+## Introduction
 
-For *continuous data protection* see [eve4pve-autosnap](https://github.com/EnterpriseVE/eve4pve-autosnap)
+Backup And Restore Ceph for Proxmox VE with retention. This solution implement
+backup for Ceph cluster exporting to specific directory. The mechanism using
+Ceph snapshot, export and export differential. In backup export image and config
+file VM/CT.
 
-# Main features
+For _continuous data protection_ see
+[eve4pve-autosnap](https://github.com/EnterpriseVE/eve4pve-autosnap)
+
+## Main features
+
 * For KVM and LXC
 * Can keep multiple backup
 * Syslog integration
@@ -92,57 +96,74 @@ For *continuous data protection* see [eve4pve-autosnap](https://github.com/Enter
 * Multiple VM single execution
 * Copy config and firewall files
 * Export any vm in cluster 'all'
-* Export any vm in specific host 'all-hostname' 
+* Export any vm in specific host 'all-hostname'
 * Show size of backup and incremental
 * Check 'No backup' flag in disk configuration
 * Protected/unprotected snap mode
 * Notification via email
-* Assemble image from diff require [eve4ceph-mdti](https://github.com/EnterpriseVE/eve4ceph-mdti)
+* Assemble image from diff require
+  [eve4ceph-mdti](https://github.com/EnterpriseVE/eve4ceph-mdti)
 
-# Protected / unprotected snapshot
-During backup snapshot is created in protected mode, to avoid accidental deletion.
-In Proxom VE remove VM not possible with error "Removing all snapshots: 0% complete...failed".
-The problem is **Proxmox VE unprotect only the snapshos it knows**.
+## Protected / unprotected snapshot
+
+During backup snapshot is created in protected mode, to avoid accidental
+deletion. In Proxom VE remove VM not possible with error "Removing all
+snapshots: 0% complete...failed". The problem is **Proxmox VE unprotect only the
+snapshos it knows**.
 
 Whit parameter **--unprotect-snap** is possible to disable protection snap.
 
-# Configuration and use
-Download package eve4pve-barc_?.?.?-?_all.deb, on your Proxmox VE host and install:
-```
+## Configuration and use
+
+Download package eve4pve-barc_?.?.?-?_all.deb, on your Proxmox VE host and
+install:
+
+```sh
 wget https://github.com/EnterpriseVE/eve4pve-barc/releases/download/?.?.?/eve4pve-barc_?.?.?_all.deb
 dpkg -i eve4pve-barc_?.?.?-?_all.deb
 ```
+
 This tool need basically no configuration.
 
 ## Backup a VM one time
-```
+
+```sh
 root@pve1:~# eve4pve-barc backup --vmid=111 --label='daily' --path=/mnt/bckceph --keep=2
 ```
-This command backup VM 111. The --keep tells that it should be kept 2 backup, if there are more than 2 backup, the 3 one will be erased (sorted by creation time).
+
+This command backup VM 111. The --keep tells that it should be kept 2 backup, if
+there are more than 2 backup, the 3 one will be erased (sorted by creation
+time).
+
 ## Create a recurring backup job
-```
+
+```sh
 root@pve1:~# eve4pve-barc create --vmid=111 --label='daily' --path=/mnt/bckceph --keep=5
 ```
 
 ## Delete a recurring backup job
-```
+
+```sh
 root@pve1:~# eve4pve-barc destroy --vmid=111 --label='daily' --path=/mnt/bckceph --keep=5
 ```
 
 ## Pause a backup job
-```
+
+```sh
 root@pve1:~# eve4pve-barc disable --vmid=111 --label='daily'
 ```
 
 ## Reactivate a backup job
-```
+
+```sh
 root@pve1:~# eve4pve-barc enable --vmid=111 --label='daily'
 ```
 
 ## Status
+
 Show status backup in directory destination.
 
-```
+```sh
 root@pve1:~# eve4pve-barc status --vmid=111,112 --label='daily' --path=/mnt/bckceph
 
 VM  TYPE SIZE   BACKUP            IMAGE
@@ -164,28 +185,36 @@ VM  TYPE SIZE   BACKUP            IMAGE
 ```
 
 ## Restore a VM one time
-```
+
+```sh
 root@pve1:~# eve4pve-barc restore --vmid=111 --label='daily' --path=/mnt/bckceph
 ```
+
 This command restore single image.
 
 ### Select image restore
+
 ![alt text](./docs/select-image.png "Select image restore")
 
 ### Select time restore
+
 ![alt text](./docs/select-time.png "Select time restore")
 
 ### Select pool destination
+
 ![alt text](./docs/select-pool.png "Select pool destination")
 
 ### Input name image destination
+
 ![alt text](./docs/name-image-destination.png "Input name image destination")
 
 ### Confirm restore
+
 ![alt text](./docs/confirm-restore.png "Confirm restore")
 
 ### Process output restore
-```
+
+```sh
 Start restore process
 Inital import 170108013045.pool-rbd.vm-111-disk-1.img
 Importing image: 100% complete...done.
@@ -205,19 +234,24 @@ Consider to manually create VM/CT and change config file from backup adapting re
 ```
 
 ## Assemble make a unique image with diff file.
-```
+
+```sh
 root@pve1:~# eve4pve-barc assemble --vmid=111 --label='daily' --path=/mnt/bckceph
 ```
+
 ### Select image
+
 ![alt text](./docs/assemble1.png "Select image restore")
 
 ### Select time
+
 ![alt text](./docs/assemble2.png "Select time restore")
 
 ### Confim assemble
+
 ![alt text](./docs/assemble3.png "Confirm assemble")
 
-```
+```sh
 Start assemble process
 Copy image to '/mnt/bckceph/barc/111/daily/assemble-hdd-pool.vm-111-disk-1'
 Assemble /mnt/bckceph/barc/111/daily/170917212942hdd-pool.vm-111-disk-1.diff
@@ -303,10 +337,13 @@ Writing 29091840 bytes to image
 Backup hdd-pool.vm-111-disk-1 assebled in assemble-hdd-pool.vm-111-disk-1 with success!
 ```
 
-Mount image. For ntfs using offset 1048576 
-```
+Mount image. For ntfs using offset 1048576
+
+```sh
 mount -o loop,offset=1048576 assemble-hdd-pool.vm-11-disk-1.assimg /mnt/imgbck/
 ```
 
 ## Changing parameters
-You can edit the configuration in /etc/cron.d/eve4pve-barc or destroy the job and create it new.
+
+You can edit the configuration in /etc/cron.d/eve4pve-barc or destroy the job
+and create it new.
