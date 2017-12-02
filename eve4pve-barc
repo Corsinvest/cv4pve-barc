@@ -468,11 +468,11 @@ function backup(){
             continue
         fi
 
-        local -a export_image_spec
-        local -a export_current_snap
-        local -a export_backup_file
-        local -a export_latest_snap
-        local -a export_type
+        local -a export_image_spec=()
+        local -a export_current_snap=()
+        local -a export_backup_file=()
+        local -a export_latest_snap=()
+        local -a export_type=()
         local -i export_idx=0
 
         local image_spec
