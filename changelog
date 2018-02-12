@@ -1,3 +1,11 @@
+eve4pve-barc (0.1.9)
+
+  * Add support backup VM in storage Proxmox VE (pool Ceph)
+  * Improve log debug
+  * Improve code
+
+ -- EnterpriseVE Support Team <support@enterpriseve.com>  12 Feb 2018 11:50:01 +0100
+
 eve4pve-barc (0.1.8)
 
   * Initialize arrays to prevent values filled from previous jobs/vm #22

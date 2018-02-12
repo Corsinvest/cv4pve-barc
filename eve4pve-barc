@@ -3,7 +3,7 @@
 # EnterpriseVE Backup And Restore Ceph for Proxmox VE.
 # Author: Daniele Corsini <daniele.corsini@enterpriseve.com>
 
-declare -r VERSION=0.1.8
+declare -r VERSION=0.1.9
 declare -r NAME=$(basename "$0")
 declare -r PROGNAME=${NAME%.*}
 
@@ -37,6 +37,7 @@ declare snap_name_prefix=''
 declare path_backup=''
 declare -i vm_id=0
 declare -A vm_ids
+
 function usage(){
    shift
 
@@ -85,15 +86,16 @@ Commands:
     disable              Disable backup job from scheduler
     status               Get list of all backups
     clean                Clear all backup
-    reset                Remove all snapshots on images specific vm in Ceph
+    reset                Remove all snapshots on images specific VM/CT in Ceph
     backup               Will backup one time
     restore              Will restore image one time
     assemble             Assemble a unique image with diff file. (Require eve4ceph-mdti)
 
 Options:
-    --vmid               The ID of the VM, comma separated (es. 100,101,102), 
+    --vmid               The ID of the VM/CT, comma separated (es. 100,101,102), 
                          'all-???' for all known guest systems in specific host (es. all-pve1, all-\$(hostname)),
-                         'all' for all known guest systems in cluster
+                         'all' for all known guest systems in cluster,
+                         'storage-???' storage Proxmox VE (pool Ceph) 
     --label              Is usually 'hourly', 'daily', 'weekly', or 'monthly'
     --path               Path destination backup
     --keep               Specify the number of backup which should will keep, Default 1
@@ -229,15 +231,40 @@ function parse_opts(){
 
         vm_ids=$(echo "$data" | tr ',' '\n')
 
+    elif [[ "$opt_vm_ids" == "storage-"* ]]; then
+        #all in specific storage (pool Ceph)
+
+        local storage=${opt_vm_ids#*-}
+
+        if ! pvesm list "$storage" > /dev/null 2>&1; then    
+            log info "Pool '$storage' not found in ProxmoxVE storage." 
+            end_process 1
+        fi
+
+        vm_ids=$(pvesm list "$storage" | awk '{print $4}')
+
     else
         #comma separated
         vm_ids=$(echo "$opt_vm_ids" | tr ',' '\n')
+        
     fi
 
     [ -z "$opt_label" ] && { log info "Label is not set correctly"; end_process 1; }
     [ "$opt_keep" -le 0 ] && { log info "Keep is not set correctly. Value > 0."; end_process 1; }
 
     snap_name_prefix="barc$opt_label"
+
+    if [ $opt_debug -eq 1 ]; then
+        log info "============================================"
+        log info "EnterpriseVE BARC Version: $VERSION";
+        log info "============================================"
+        log info "Proxmox VE Version:"
+
+        #info proxmox
+        pveversion --verbose
+
+        log info "============================================"
+    fi    
 }
 
 function get_path(){
@@ -434,7 +461,7 @@ function backup(){
 
     parse_opts "$@"
 
-    log info "EnterpriseVE BARC | Backup"
+    log info "ACTION: Backup"
 
     local timestamp; timestamp=$(date +%y%m%d%H%M%S)
     log info "Start backup $(date "+%F %T")"
@@ -778,6 +805,8 @@ function reset(){
 function restore(){
     parse_opts "$@"
 
+    log info "ACTION: Restore image"
+
     for vm_id in $vm_ids; do
         get_path   
 
@@ -809,7 +838,7 @@ function restore(){
 
         [ -z "$timestamp" ] && exit 1
 
-        #list all ppols
+        #list all pools
         pools=($(rados lspools | awk '{printf "%s %s\n",$1,$1}'))
 
         #select timestamp
@@ -847,7 +876,7 @@ function restore(){
         for backup in $path_backup/*$image*; do
             if [[ $backup == *".img" ]]; then
                 #initial import 
-                log info "Inital import $(basename "$backup")"                
+                log info "Initial import $(basename "$backup")"                
                 do_run "rbd import --image-format 2 '$backup' $pool_name/$name_import"
 
                 #create initlal snap name
@@ -866,6 +895,7 @@ function restore(){
         done     
 
         #remove all snapshots
+        log info "Remove all snapshots"
         do_run "rbd snap purge $pool_name/$name_import"
 
         log info "Backup $image restored in $pool_name/$name_import with success!"    

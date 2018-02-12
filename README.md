@@ -54,15 +54,16 @@ Commands:
     disable              Disable backup job from scheduler
     status               Get list of all backups
     clean                Clear all backup
-    reset                Remove all snapshots on images specific vm in Ceph
+    reset                Remove all snapshots on images specific VM/CT in Ceph
     backup               Will backup one time
     restore              Will restore image one time
     assemble             Assemble a unique image with diff file. (Require eve4ceph-mdti)
 
 Options:
-    --vmid               The ID of the VM, comma separated (es. 100,101,102),
+    --vmid               The ID of the VM/CT, comma separated (es. 100,101,102),
                          'all-???' for all known guest systems in specific host (es. all-pve1, all-$(hostname)),
                          'all' for all known guest systems in cluster
+                         'storage-???' storage Proxmox VE (pool Ceph) 
     --label              Is usually 'hourly', 'daily', 'weekly', or 'monthly'
     --path               Path destination backup
     --keep               Specify the number of backup which should will keep, Default 1
@@ -91,12 +92,13 @@ For _continuous data protection_ see
 * For KVM and LXC
 * Can keep multiple backup
 * Syslog integration
-* Multiple schedule VM using --label (es. daily,monthly)
+* Multiple schedule VM/CT using --label (es. daily,monthly)
 * Hook script
-* Multiple VM single execution
+* Multiple VM/CT single execution
 * Copy config and firewall files
-* Export any vm in cluster 'all'
-* Export any vm in specific host 'all-hostname'
+* Export any VM/CT in cluster 'all'
+* Export any VM/CT in specific host 'all-hostname'
+* Export any VM/CT in specific pool
 * Show size of backup and incremental
 * Check 'No backup' flag in disk configuration
 * Protected/unprotected snap mode
@@ -115,7 +117,7 @@ Whit parameter **--unprotect-snap** is possible to disable protection snap.
 
 ## Configuration and use
 
-Download package eve4pve-barc_?.?.?-?_all.deb, on your Proxmox VE host and
+Download package eve4pve-barc\_?.?.?-?\_all.deb, on your Proxmox VE host and
 install:
 
 ```sh
@@ -125,13 +127,13 @@ dpkg -i eve4pve-barc_?.?.?-?_all.deb
 
 This tool need basically no configuration.
 
-## Backup a VM one time
+## Backup a VM/CT one time
 
 ```sh
 root@pve1:~# eve4pve-barc backup --vmid=111 --label='daily' --path=/mnt/bckceph --keep=2
 ```
 
-This command backup VM 111. The --keep tells that it should be kept 2 backup, if
+This command backup VM/CT 111. The --keep tells that it should be kept 2 backup, if
 there are more than 2 backup, the 3 one will be erased (sorted by creation
 time).
 
@@ -184,7 +186,7 @@ VM  TYPE SIZE   BACKUP            IMAGE
 112 diff   1.9M 17-02-08 17:27:33 pool-rbd.vm-112-disk-1
 ```
 
-## Restore a VM one time
+## Restore a VM/CT one time
 
 ```sh
 root@pve1:~# eve4pve-barc restore --vmid=111 --label='daily' --path=/mnt/bckceph
@@ -233,7 +235,7 @@ Backup pool-rbd.vm-111-disk-1 restored in pool-rbd/vm-111-disk-1-restored with s
 Consider to manually create VM/CT and change config file from backup adapting restored image.
 ```
 
-## Assemble make a unique image with diff file.
+## Assemble make a unique image with diff file
 
 ```sh
 root@pve1:~# eve4pve-barc assemble --vmid=111 --label='daily' --path=/mnt/bckceph
@@ -337,7 +339,7 @@ Writing 29091840 bytes to image
 Backup hdd-pool.vm-111-disk-1 assebled in assemble-hdd-pool.vm-111-disk-1 with success!
 ```
 
-Mount image. For ntfs using offset 1048576
+Mount image. For NTFS using offset 1048576
 
 ```sh
 mount -o loop,offset=1048576 assemble-hdd-pool.vm-11-disk-1.assimg /mnt/imgbck/
