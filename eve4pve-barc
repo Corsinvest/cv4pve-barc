@@ -874,25 +874,23 @@ function restore(){
 
         local backup=''
         for backup in $path_backup/*$image*; do
+            local timestamp_snap; timestamp_snap=$(basename "$backup" | awk '{print substr($1,1,12)}')
             if [[ $backup == *".img" ]]; then
                 #initial import 
-                log info "Initial import $(basename "$backup")"                
+                log info "Initial import $(basename "$backup")"
                 do_run "rbd import --image-format 2 '$backup' $pool_name/$name_import"
-
                 #create initlal snap name
-                local timestamp_snap; timestamp_snap=$(basename "$backup" | awk '{print substr($1,1,12)}')
                 local snap_name_restore="$snap_name_prefix$timestamp_snap"
                 do_run "rbd snap create $pool_name/$name_import@$snap_name_restore"
-            
-            else
+            elif [[ $timestamp_snap -lt $timestamp || $timestamp_snap -eq $timestamp ]]; then
                 #differential
-                log info "Differential $backup"
+                log info "Differential $(basename "$backup")"
                 do_run "rbd import-diff '$backup' $pool_name/$name_import"
-
+            else
+                #skipped diffs, if not latest timestamp selected to restore
+                log info "Diff skipped - $(basename "$backup")"
             fi
-
-            [[ $backup == "$path_backup/$timestamp.$image"* ]] && break;        
-        done     
+        done
 
         #remove all snapshots
         log info "Remove all snapshots"
