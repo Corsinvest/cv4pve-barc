@@ -1,4 +1,10 @@
-eve4pve-barc (0.1.9)
+eve4pve-barc (0.2.0)
+
+  * Improve code
+
+ -- EnterpriseVE Support Team <support@enterpriseve.com>  29 Mar 2019 11:50:01 +0100
+ 
+ eve4pve-barc (0.1.9)
 
   * Add support backup VM in storage Proxmox VE (pool Ceph)
   * Improve log debug

@@ -3,7 +3,7 @@
 # EnterpriseVE Backup And Restore Ceph for Proxmox VE.
 # Author: Daniele Corsini <daniele.corsini@enterpriseve.com>
 
-declare -r VERSION=0.1.9
+declare -r VERSION=0.2.0
 declare -r NAME=$(basename "$0")
 declare -r PROGNAME=${NAME%.*}
 
@@ -100,13 +100,13 @@ Options:
     --path               Path destination backup
     --keep               Specify the number of backup which should will keep, Default 1
     --script             Use specified hook script
-                         Es. /usr/share/doc/$PROGNAME/examples/script-hook.sh
+                         E.g. /usr/share/doc/$PROGNAME/examples/script-hook.sh
     --syslog             Write messages into the system log
     --mail               Email addresses send log backup, comma separated (es. info@domain.ltd,info1@domain.ltd)
     --unprotect-snap     Disable protection snapshot, default is protected.
                          In Proxmox VE 'protected snapshot' cause problem in remove VM/CT see documentation.
 
-Report bugs to <support@enterpriseve.com>. 
+Report bugs to <support@enterpriseve.com>
 EOF
 
     exit 1
@@ -203,6 +203,18 @@ function parse_opts(){
       esac
     done
 
+    if [ $opt_debug -eq 1 ]; then
+        log info "============================================"
+        log info "EnterpriseVE BARC Version: $VERSION";
+        log info "============================================"
+        log info "Proxmox VE Version:"
+
+        #info proxmox
+        pveversion --verbose
+
+        log info "============================================"
+    fi
+
     if [ "$action" != "reset" ]; then
         [ ! -d "$opt_path_backup" ] && { log info "Path Backup is not set"; end_process 1; }
     fi
@@ -237,7 +249,7 @@ function parse_opts(){
         local storage=${opt_vm_ids#*-}
 
         if ! pvesm list "$storage" > /dev/null 2>&1; then    
-            log info "Pool '$storage' not found in ProxmoxVE storage." 
+            log info "Pool '$storage' not found in Proxmox VE storage." 
             end_process 1
         fi
 
@@ -253,18 +265,6 @@ function parse_opts(){
     [ "$opt_keep" -le 0 ] && { log info "Keep is not set correctly. Value > 0."; end_process 1; }
 
     snap_name_prefix="barc$opt_label"
-
-    if [ $opt_debug -eq 1 ]; then
-        log info "============================================"
-        log info "EnterpriseVE BARC Version: $VERSION";
-        log info "============================================"
-        log info "Proxmox VE Version:"
-
-        #info proxmox
-        pveversion --verbose
-
-        log info "============================================"
-    fi    
 }
 
 function get_path(){

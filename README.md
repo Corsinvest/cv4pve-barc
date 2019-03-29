@@ -62,19 +62,19 @@ Commands:
 Options:
     --vmid               The ID of the VM/CT, comma separated (es. 100,101,102),
                          'all-???' for all known guest systems in specific host (es. all-pve1, all-$(hostname)),
-                         'all' for all known guest systems in cluster
+                         'all' for all known guest systems in cluster,
                          'storage-???' storage Proxmox VE (pool Ceph) 
     --label              Is usually 'hourly', 'daily', 'weekly', or 'monthly'
     --path               Path destination backup
     --keep               Specify the number of backup which should will keep, Default 1
     --script             Use specified hook script
-                         Es. /usr/share/doc/eve4pve-barc/examples/script-hook.sh
+                         E.g. /usr/share/doc/eve4pve-barc/examples/script-hook.sh
     --syslog             Write messages into the system log
     --mail               Email addresses send log backup, comma separated (es. info@domain.ltd,info1@domain.ltd)
     --unprotect-snap     Disable protection snapshot, default is protected.
                          In Proxmox VE 'protected snapshot' cause problem in remove VM/CT see documentation.
 
-Report bugs to <support@enterpriseve.com>.
+Report bugs to <support@enterpriseve.com>
 ```
 
 ## Introduction
