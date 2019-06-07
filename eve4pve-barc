@@ -3,7 +3,7 @@
 # EnterpriseVE Backup And Restore Ceph for Proxmox VE.
 # Author: Daniele Corsini <daniele.corsini@enterpriseve.com>
 
-declare -r VERSION=0.2.0
+declare -r VERSION=0.2.1
 declare -r NAME=$(basename "$0")
 declare -r PROGNAME=${NAME%.*}
 
@@ -253,7 +253,7 @@ function parse_opts(){
             end_process 1
         fi
 
-        vm_ids=$(pvesm list "$storage" | awk '{print $4}')
+        vm_ids=$(pvesm list "$storage" | awk '{print $4}' | awk '!a[$0]++' )
 
     else
         #comma separated

@@ -1,4 +1,10 @@
-eve4pve-barc (0.2.0)
+eve4pve-barc (0.2.1)
+
+  * Remove duplicate vmid from storage entry
+
+ -- EnterpriseVE Support Team <support@enterpriseve.com>  07 Jun 2019 11:50:01 +0100
+ 
+ eve4pve-barc (0.2.0)
 
   * Improve code
 
