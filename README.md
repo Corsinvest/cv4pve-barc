@@ -6,8 +6,6 @@
 
 Backup And Restore Ceph for Proxmox VE
 
-[More information about eve4pve-barc](http://www.enterpriseve.com/backup-and-restore-ceph-proxmox-ve/)
-
 Ceph Documentation
 
 [Incremental snapshots with rbd](http://ceph.com/dev-notes/incremental-snapshots-with-rbd/)
