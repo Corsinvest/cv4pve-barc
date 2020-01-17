@@ -38,6 +38,24 @@ declare path_backup=''
 declare -i vm_id=0
 declare -A vm_ids
 
+
+declare -A -g pvnode
+
+
+function map_vmids_to_host(){
+	echo "map_vmids_to_host..."
+#declare -a pvnode
+	for node in $(/usr/bin/pvecm nodes | tail +5 | tr -s ' ' | cut -d' ' -f 4)
+	do
+	        for vm in $(ssh root@$node qm list|tail +2|tr -s ' '|cut -f 2 -d' ')
+	        do
+	                pvnode[$vm]=$node
+	        done
+	done
+#	printf '%s\n' "${pvnode[@]}"
+}
+
+
 function usage(){
    shift
 
@@ -420,6 +438,7 @@ function call_hook_script(){
     export EVE4PVE_BARC_PATH="$opt_path_backup"
     export EVE4PVE_BARC_LABEL="$opt_label"
     export EVE4PVE_BARC_KEEP=$opt_keep
+    export EVE4PVE_BARC_HOST="$5"
 
     log debug "-------------------------------------------------------" 
     log debug "EVE4PVE_BARC_PHASE:          $EVE4PVE_BARC_PHASE" 
@@ -429,6 +448,7 @@ function call_hook_script(){
     log debug "EVE4PVE_BARC_KEEP:           $EVE4PVE_BARC_KEEP" 
     log debug "EVE4PVE_BARC_SNAP_NAME:      $EVE4PVE_BARC_SNAP_NAME" 
     log debug "EVE4PVE_BARC_BACKUP_FILE:    $EVE4PVE_BARC_BACKUP_FILE" 
+    log debug "EVE4PVE_BARC_HOST:           $EVE4PVE_BARC_HOST"
     log debug "-------------------------------------------------------" 
 
     if [ -e "$opt_script" ]; then
@@ -487,6 +507,8 @@ function backup(){
         local file_config; file_config=$(get_config_file)        
         [ -z "$file_config" ] && continue
 
+	map_vmids_to_host
+
         #create path backup
         get_path
         if ! mkdir -p "$path_backup"; then
@@ -509,6 +531,8 @@ function backup(){
 
         log info "VM $vm_id - ======== Start backup ========"
         log info "VM $vm_id - -------- Snapshots Disks --------"
+
+	call_hook_script "snap-vm-pre" "-" "-" "-" ${pvnode[$vm_id]} 
 
         #loop disk create snapshot
         local disk=''
@@ -601,6 +625,8 @@ function backup(){
 
             let export_idx++
         done
+
+	call_hook_script "snap-vm-post" "-" "-" "-" ${pvnode[$vm_id]}
 
         log info "VM $vm_id - -------- Export images -------- "
 
