@@ -40,7 +40,13 @@ declare -A vm_ids
 
 
 declare -A -g pvnode
-
+declare -g vmtotal
+declare -g vmok
+declare -g snapshottotal
+declare -g snapshotok
+declare -g exporttotal
+declare -g exportok
+declare -g bytecount
 
 function map_vmids_to_host(){
     for node in $(/usr/bin/pvecm nodes | tail +5 | tr -s ' ' | cut -d' ' -f 4)
@@ -480,7 +486,7 @@ function backup(){
 
     log info "ACTION: Backup"
 
-    local timestamp; timestamp=$(date +%y%m%d%H%M%S)
+    local timestamp; timestamp=$(date +%Y%m%d%H%M%S)
     log info "Start backup $(date "+%F %T")"
 
     #create pid file
@@ -501,6 +507,8 @@ function backup(){
     call_hook_script "backup-job-start" "-" "-"
 
     map_vmids_to_host
+
+    vmtotal=${#vm_ids[@]}
 
     for vm_id in $vm_ids; do
         local file_config; file_config=$(get_config_file)        
@@ -535,6 +543,7 @@ function backup(){
         #loop disk create snapshot
         local disk=''
         for disk in $(get_disks_from_config "$file_config"); do
+            snapshottotal=$((snapshottotal+1))
             #check rbd device image-spec is pool-name/image-name
             image_spec=$(get_image_spec "$disk")
             [ -z "$image_spec" ] && continue 
@@ -560,9 +569,7 @@ function backup(){
                     rc=20                         
                     break;
                 fi
-
                 export_type[$export_idx]="image"
-
             else
                 #incremental backup
                 backup_file="$backup_file$EXT_DIFF"
@@ -616,8 +623,8 @@ function backup(){
 
                 export_latest_snap[$export_idx]="$latest_snap"
                 export_type[$export_idx]="diff"
-             
             fi
+            snapshotok=$((snapshotok+1))             
 
             export_backup_file[$export_idx]="$backup_file"
 
@@ -630,6 +637,7 @@ function backup(){
 
         #loop export file from Ceph
         for (( i=0; i<${#export_current_snap[@]}; i++ )); do
+            exporttotal=$((exporttotal+1))
             image_spec=${export_image_spec[$i]};
             current_snap=${export_current_snap[$i]};
             backup_file=${export_backup_file[$i]};
@@ -652,6 +660,7 @@ function backup(){
                     break;
                 fi
                 log info "VM $vm_id - Size $(get_size_file "$backup_file")"
+                exportok=$((exportok+1))
 
                 call_hook_script "export-post" "$current_snap" "$backup_file"
 
@@ -671,12 +680,14 @@ function backup(){
                     break;
                 fi
                 log info "VM $vm_id - Size $(get_size_file "$backup_file")" 
+                exportok=$((exportok+1))
 
                 call_hook_script "export-diff-post" "$current_snap" "$backup_file"
 
                 #remove previous snapshot
                 remove_snaphot "$image_spec@$latest_snap" 1
             fi
+            bytecount=$((bytecount+$(sum_size_file "$backup_file")))
         done
 
         #copy config files
@@ -689,7 +700,7 @@ function backup(){
             log info "VM $vm_id - -------- Copy firewall --------"
             do_run "cp '$file_firewall' '$path_backup/$timestamp$EXT_FIREWALL'"
         fi
-
+        vmok=$((vmok+1))
         log info "VM $vm_id - -------- Merge diff file --------"
         merge_diff_backup
     done
@@ -700,7 +711,7 @@ function backup(){
 
     call_hook_script "backup-job-end" "-" "-"        
 
-    timestamp=$(date +%y%m%d%H%M%S)
+    timestamp=$(date +%Y%m%d%H%M%S)
     log info "End backup $(date "+%F %T")"
 
     end_process $rc 
@@ -711,7 +722,7 @@ function get_size_file(){
 }
 
 function sum_size_file(){
-    sumbytes=$((sumbytes+$(ls -lh "$1" | awk '{print $5}')))
+    echo $((sumbytes+$(ls -l "$1" | awk '{print $5}')))
 }
 
 
@@ -973,6 +984,16 @@ function status(){
     done
 }
 
+function bytesToHuman() {
+    b=${1:-0}; d=''; s=0; S=(Bytes {K,M,G,T,P,E,Z,Y}iB)
+    while ((b > 1024)); do
+        d="$(printf ".%02d" $((b % 1024 * 100 / 1024)))"
+        b=$((b / 1024))
+        let s++
+    done
+    echo "$b$d ${S[$s]}"
+}
+
 function assemble(){
     local cmd_assemble; cmd_assemble=$(which eve4ceph-mdti 2>/dev/null)
     [ -z "$cmd_assemble" ] && { log error "eve4ceph-mdti (Merge Diff file To Image for Ceph) command not found. See https://github.com/EnterpriseVE/eve4ceph-mdti"; exit 1; }
@@ -1042,12 +1063,12 @@ function assemble(){
 
 function end_process(){
     local -i rc=$1;
-
-    local subject="Log $NAME"
+    local subject="Ceph [VM: $vmok/$vmtotal SS: $snapshotok/$snapshottotal EX: $exportok/$exporttotal] [$(bytesToHuman "$bytecount")]"
     [ $rc != 0 ] && subject="$subject [ERROR]"
 
     #send email
     local mail;
+    local mailhead="Backup $imgcount Images in $vmcount VMs (Bytes: $bytecount)"
     for mail in $(echo "$opt_addr_mail" | tr "," "\n"); do
         do_run "cat '$LOG_FILE' | mail -s '$subject' '$mail'"
     done
