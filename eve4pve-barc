@@ -43,16 +43,13 @@ declare -A -g pvnode
 
 
 function map_vmids_to_host(){
-	echo "map_vmids_to_host..."
-#declare -a pvnode
-	for node in $(/usr/bin/pvecm nodes | tail +5 | tr -s ' ' | cut -d' ' -f 4)
-	do
-	        for vm in $(ssh root@$node qm list|tail +2|tr -s ' '|cut -f 2 -d' ')
-	        do
-	                pvnode[$vm]=$node
-	        done
-	done
-#	printf '%s\n' "${pvnode[@]}"
+    for node in $(/usr/bin/pvecm nodes | tail +5 | tr -s ' ' | cut -d' ' -f 4)
+    do
+        for vm in $(ssh root@$node qm list|tail +2|tr -s ' '|cut -f 2 -d' ')
+        do
+            pvnode[$vm]=$node
+        done
+    done
 }
 
 
@@ -503,11 +500,12 @@ function backup(){
 
     call_hook_script "backup-job-start" "-" "-"
 
+    map_vmids_to_host
+
     for vm_id in $vm_ids; do
         local file_config; file_config=$(get_config_file)        
         [ -z "$file_config" ] && continue
 
-	map_vmids_to_host
 
         #create path backup
         get_path
@@ -532,7 +530,7 @@ function backup(){
         log info "VM $vm_id - ======== Start backup ========"
         log info "VM $vm_id - -------- Snapshots Disks --------"
 
-	call_hook_script "snap-vm-pre" "-" "-" "-" ${pvnode[$vm_id]} 
+	    call_hook_script "snap-vm-pre" "-" "-" "-" ${pvnode[$vm_id]} 
 
         #loop disk create snapshot
         local disk=''
@@ -626,7 +624,7 @@ function backup(){
             let export_idx++
         done
 
-	call_hook_script "snap-vm-post" "-" "-" "-" ${pvnode[$vm_id]}
+	    call_hook_script "snap-vm-post" "-" "-" "-" ${pvnode[$vm_id]}
 
         log info "VM $vm_id - -------- Export images -------- "
 
@@ -711,6 +709,11 @@ function backup(){
 function get_size_file(){
     echo $(ls -lh "$1" | awk '{print $5}')
 }
+
+function sum_size_file(){
+    sumbytes=$((sumbytes+$(ls -lh "$1" | awk '{print $5}')))
+}
+
 
 function merge_diff_backup(){
     #loop all image
