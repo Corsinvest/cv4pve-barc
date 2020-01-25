@@ -2,6 +2,7 @@
 
 # EnterpriseVE Backup And Restore Ceph for Proxmox VE.
 # Author: Daniele Corsini <daniele.corsini@enterpriseve.com>
+#         Bastian Mäuser <bma@netz.org>        
 
 declare -r VERSION=0.2.1
 declare -r NAME=$(basename "$0")
@@ -82,19 +83,19 @@ Usage:
     $PROGNAME help
     $PROGNAME version
  
-    $PROGNAME create   --vmid=<string> --label=<string> --path=<string> --keep=<integer>
+    $PROGNAME create   --vmid=<string> --label=<string> --path=<string> [--keep=<integer>|--renew=<integer>]
                           --script=<string> --mail=<string> --unprotect-snap --syslog 
     $PROGNAME destroy  --vmid=<string> --label=<string> --path=<string> 
     $PROGNAME enable   --vmid=<string> --label=<string> --path=<string> 
     $PROGNAME disable  --vmid=<string> --label=<string> --path=<string> 
 
-    $PROGNAME backup   --vmid=<string> --label=<string> --path=<string> --keep=<integer>
+    $PROGNAME backup   --vmid=<string> --label=<string> --path=<string> [--keep=<integer>|--renew=<integer>]
                           --script=<string> --mail=<string> --unprotect-snap --syslog 
     $PROGNAME restore  --vmid=<string> --label=<string> --path=<string>
                           --script=<string> --syslog 
 
     $PROGNAME status   --vmid=<string> --label=<string> --path=<string>   
-    $PROGNAME clean    --vmid=<string> --label=<string> --path=<string> --keep=<integer>
+    $PROGNAME clean    --vmid=<string> --label=<string> --path=<string> [--keep=<integer>|--renew=<integer>]
     $PROGNAME reset    --vmid=<string> --label=<string>   
     $PROGNAME assemble --vmid=<string> --label=<string> --path=<string>
                           --script=<string> 
@@ -120,6 +121,7 @@ Options:
     --label              Is usually 'hourly', 'daily', 'weekly', or 'monthly'
     --path               Path destination backup
     --keep               Specify the number of backup which should will keep, Default 1
+    --renew              Specify how many diffs may accumulate, until a full Backup is issued
     --script             Use specified hook script
                          E.g. /usr/share/doc/$PROGNAME/examples/script-hook.sh
     --syslog             Write messages into the system log
@@ -199,7 +201,7 @@ function parse_opts(){
     local args
     args=$(getopt \
            --options '' \
-           --longoptions=path:,vmid:,label:,keep:,mail: \
+           --longoptions=path:,vmid:,label:,keep:,renew:,mail: \
            --longoptions=script:,syslog,debug,dry-run,unprotect-snap \
            --name "$PROGNAME" \
            -- "$@") \
@@ -212,6 +214,7 @@ function parse_opts(){
         --vmid) opt_vm_ids=$2; shift 2;;
         --label) opt_label="$2"; shift 2;;
         --keep) opt_keep=$2; shift 2;;
+        --renew) opt_renew=$2; shift 2;;
         --path) opt_path_backup="$2"; shift 2;;
         --script) opt_script="$2"; shift 2;;
         --syslog) opt_syslog=1; shift;;
@@ -238,6 +241,11 @@ function parse_opts(){
 
     if [ "$action" != "reset" ]; then
         [ ! -d "$opt_path_backup" ] && { log info "Path Backup is not set"; end_process 1; }
+    fi
+
+    if [ "$opt_keep" ] && [ "$opt_renew" ]; then
+        log info "Conflicting Options! You cannot use --keep in conjunction with --renew."
+        end_process 1
     fi
 
     [ -z "$opt_vm_ids" ] && { log info "VM id is not set."; end_process 1; }
@@ -560,20 +568,45 @@ function backup(){
             export_latest_snap[$export_idx]=""
             export_type[$export_idx]=""
 
+            #obey renew policy
+            local diffcount=0
+            local renew=false
+            regex='^.*\.(.*)$'
+            for backup_files_present in $(ls -r $path_backup/*$suffix_backup_file{$EXT_DIFF,$EXT_IMAGE} 2>/dev/null); do
+                if [[ "$backup_files_present" =~ $regex ]]; then
+                    ext=${BASH_REMATCH[1]}
+                    if [ "$ext" == 'diff' ]; then
+                        diffcount=$((diffcount+1))
+                    else
+                        renew=false
+                        break;
+                    fi
+                fi
+                if [ "$diffcount" -gt "$opt_renew" ]; then
+                    renew=true
+                    break;
+                fi
+            done
+
+            echo "RENEW?: $renew"
             #check exist initial export
             if ! exist_file "$path_backup/*$suffix_backup_file$EXT_IMAGE"; then
                 #initial export not exist            
                 backup_file="$backup_file$EXT_IMAGE"
-                
+                echo "DEBUG: FULL RUN $backup_file"
                 if ! create_snapshot "$current_snap"; then
                     rc=20                         
                     break;
                 fi
                 export_type[$export_idx]="image"
             else
-                #incremental backup
-                backup_file="$backup_file$EXT_DIFF"
+                if [ "$renew" == true ]; then
+                    backup_file="$backup_file$EXT_IMAGE"
+                else
+                    backup_file="$backup_file$EXT_DIFF"
+                fi
 
+                #Snapshot Housekeeping..                
                 #find last snapshot in ceph
                 latest_snap=$(rbd snap ls "$image_spec" | \
                               awk '{print $2}' | \
@@ -622,7 +655,11 @@ function backup(){
                 fi
 
                 export_latest_snap[$export_idx]="$latest_snap"
-                export_type[$export_idx]="diff"
+                if [ "$renew" == true ]; then
+                    export_type[$export_idx]="image"
+                else
+                    export_type[$export_idx]="diff"
+                fi
             fi
             snapshotok=$((snapshotok+1))             
 
@@ -645,7 +682,7 @@ function backup(){
             type=${export_type[$i]};
 
             if [ "$type" == "image" ]; then
-                #export initial
+                #export full
                 call_hook_script "export-pre" "$current_snap" "$backup_file"
 
                 log info "VM $vm_id - Export initial '$backup_file'"
@@ -663,6 +700,12 @@ function backup(){
                 exportok=$((exportok+1))
 
                 call_hook_script "export-post" "$current_snap" "$backup_file"
+
+                #Check if previous snapshots has to be removed
+                echo "debug: $image_spec@$latest_snap"
+                if [ "$latest_snap" != "" ]; then
+                    remove_snaphot "$image_spec@$latest_snap" 1
+                fi
 
             elif [ "$type" == "diff" ]; then
                 #export-diff difference previous snapshot 
@@ -729,9 +772,10 @@ function sum_size_file(){
 function merge_diff_backup(){
     #loop all image
     local image=''
+    echo "DEBUG: $path_backup"
     for image in $path_backup/*$EXT_IMAGE; do
         image=$(basename "$image")
-       
+        
         local suffix_backup_file=${image:12}        
         suffix_backup_file=${suffix_backup_file%.*}
 
