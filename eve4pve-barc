@@ -42,13 +42,13 @@ declare -A vm_ids
 
 
 declare -A -g pvnode
-declare -g vmtotal
-declare -g vmok
-declare -g snapshottotal
-declare -g snapshotok
-declare -g exporttotal
-declare -g exportok
-declare -g bytecount
+declare -i -g vmtotal
+declare -i -g vmok
+declare -i -g snapshottotal
+declare -i -g snapshotok
+declare -i -g exporttotal
+declare -i -g exportok
+declare -i -g bytecount
 
 function map_vmids_to_host(){
     for node in $(/usr/bin/pvecm nodes | tail +5 | tr -s ' ' | cut -d' ' -f 4)
@@ -287,7 +287,7 @@ function parse_opts(){
 
     else
         #comma separated
-        vm_ids=$(echo "$opt_vm_ids" | tr ',' '\n')
+        vm_ids=$(echo "$opt_vm_ids" | tr ',' "\n")
         
     fi
 
@@ -517,9 +517,8 @@ function backup(){
 
     map_vmids_to_host
 
-    vmtotal=${#vm_ids[@]}
-
     for vm_id in $vm_ids; do
+        vmtotal=$((vmtotal+1))
         local file_config; file_config=$(get_config_file)        
         [ -z "$file_config" ] && continue
 
