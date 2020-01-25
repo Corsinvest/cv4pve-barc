@@ -25,6 +25,9 @@ declare -r EXT_FIREWALL='.fw'
 
 declare opt_vm_ids=''
 declare opt_cksum=true
+declare opt_compress="none"
+declare opt_compressthreads=1
+declare opt_qemu_freeze=false
 declare -i opt_keep #=0
 declare -i opt_renew #=0
 declare -i opt_iothreads=10
@@ -126,7 +129,10 @@ Options:
     --keep               Specify the number of backup which should will keep, (default: 1)
     --renew              Specify how many diffs may accumulate, until a full Backup is issued
     --cksum              Store checksums for snapshot validation (default: true)
+    --qemu-freeze        Issue fsfreeze-freeze prio snapshotting and fsfreeze-thaw after snapshot completion (default: true)
     --iothreads          Specify number of IO threads for exporting (default: 10)
+    --compress           Specify compression method [none,gzip,bzip2,pigz] (default: none)
+    --compressthreads    Specify compression threads for pigz (default: 1)
     --script             Use specified hook script
                          E.g. /usr/share/doc/$PROGNAME/examples/script-hook.sh
     --syslog             Write messages into the system log
@@ -206,8 +212,8 @@ function parse_opts(){
     local args
     args=$(getopt \
            --options '' \
-           --longoptions=path:,vmid:,label:,keep:,renew:,cksum:,iothreads:,mail: \
-           --longoptions=script:,syslog,debug,dry-run,unprotect-snap \
+           --longoptions=path:,vmid:,label:,keep:,renew:,cksum:,iothreads:,compress:,compressthreads:,mail: \
+           --longoptions=script:,syslog,debug,dry-run,unprotect-snap,qemu-freeze \
            --name "$PROGNAME" \
            -- "$@") \
            || end_process 128
@@ -222,6 +228,9 @@ function parse_opts(){
         --renew) opt_renew=$2; shift 2;;
         --cksum) opt_cksum=$2; shift 2;;
         --iothreads) opt_iothreads=$2; shift 2;;
+        --compress) opt_compress=$2; shift;;
+        --compressthreads) opt_compressthreads=$2; shift;;
+        --qemu-freeze) opt_qemu_freeze=true; shift;;
         --path) opt_path_backup="$2"; shift 2;;
         --script) opt_script="$2"; shift 2;;
         --syslog) opt_syslog=1; shift;;
@@ -361,6 +370,28 @@ EOL
     echo -e "Job $action in cron file '$cron_file'";
 }
 
+function vm_freeze() {
+    local fvm=$1;
+    local fhost=$2;
+    local cmd="ssh root@$fhost /usr/sbin/qm guest cmd $fvm fsfreeze-freeze"
+    log info "VM $fvm - Issuing fsfreeze-freeze to $fvm on $fhost"
+    log debug "$cmd"
+    eval "$cmd"
+    rc=$?
+    log debug "vm_freeze() return $rc"
+}
+
+function vm_unfreeze() {
+    local fvm=$1;
+    local fhost=$2;
+    local cmd="ssh root@$fhost /usr/sbin/qm guest cmd $fvm fsfreeze-thaw"
+    log info "VM $fvm - Issuing fsfreeze-thaw to $fvm on $fhost"
+    log debug "$cmd"
+    eval "$cmd"
+    rc=$?
+    log debug "vm_unfreeze() return $rc"
+}
+
 function do_run(){
     local cmd=$*;
     local -i rc=0;
@@ -373,7 +404,7 @@ function do_run(){
         eval "$cmd"
         rc=$?
         [ $rc != 0 ] && log error "$cmd"
-        log debug "return $rc"
+        log debug "return $rc ps ${PIPESTATUS[@]}"
     fi
 
     return $rc
@@ -548,11 +579,12 @@ function backup(){
         local current_snap
         local backup_file
         local latest_snap
+        local compress
 
         log info "VM $vm_id - ======== Start backup ========"
         log info "VM $vm_id - -------- Snapshots Disks --------"
 
-	    call_hook_script "snap-vm-pre" "-" "-" "-" ${pvnode[$vm_id]} 
+        [[ "$opt_qemu_freeze" == true ]] && vm_freeze "$vm_id" "${pvnode[$vm_id]}"
 
         #loop disk create snapshot
         local disk=''
@@ -602,6 +634,7 @@ function backup(){
                 log info "VM $vm_id - No previous backup: issueing full run" 
                 backup_file="$backup_file$EXT_IMAGE"
                 if ! create_snapshot "$current_snap"; then
+                    [[ "$opt_qemu_freeze" == true ]] && vm_unfreeze "$vm_id" "${pvnode[$vm_id]}"
                     rc=20                         
                     break;
                 fi
@@ -659,6 +692,7 @@ function backup(){
                 fi
                 
                 if ! create_snapshot "$current_snap"; then
+                    [[ "$opt_qemu_freeze" == true ]] && vm_unfreeze "$vm_id" "${pvnode[$vm_id]}"
                     rc=60                        
                     break;
                 fi
@@ -677,7 +711,7 @@ function backup(){
             let export_idx++
         done
 
-	    call_hook_script "snap-vm-post" "-" "-" "-" ${pvnode[$vm_id]}
+        [[ "$opt_qemu_freeze" == true ]] && vm_unfreeze "$vm_id" "${pvnode[$vm_id]}"
 
         log info "VM $vm_id - -------- Export images -------- "
 
@@ -690,13 +724,28 @@ function backup(){
             latest_snap=${export_latest_snap[$i]};
             type=${export_type[$i]};
 
+            case "$opt_compress" in
+                "none" )
+                    compress="cat"
+                    ;;
+                "gzip" )
+                    compress="gzip"
+                    ;;
+                "gzip" )
+                    compress="bzip2"
+                    ;;
+                "pigz" )
+                    compress="pigz -p $opt_compressthreads"
+                    ;;
+            esac
+
             if [ "$type" == "image" ]; then
                 #export full
                 call_hook_script "export-pre" "$current_snap" "$backup_file"
 
                 log info "VM $vm_id - Export initial '$backup_file'"
                 if [ "$opt_cksum" == true ]; then
-                    excmd="rbd export --rbd-concurrent-management-ops $opt_iothreads $current_snap - | tee >(sha512sum > $backup_file.sha512) | cat > '$backup_file'"
+                    excmd="rbd export --rbd-concurrent-management-ops $opt_iothreads $current_snap - | tee >(sha512sum > $backup_file.sha512) | $compress > '$backup_file'"
                 else 
                     excmd="rbd export --rbd-concurrent-management-ops $opt_iothreads $current_snap '$backup_file'"
                 fi
@@ -725,10 +774,11 @@ function backup(){
                 call_hook_script "export-diff-pre" "$current_snap" "$backup_file"
                 log info "VM $vm_id - Export diff '$backup_file'"
                 if [ "$opt_cksum" == true ]; then
-                    excmd="rbd export-diff --from-snap $latest_snap $current_snap - | tee >(sha512sum > $backup_file.sha512) | cat > '$backup_file'"
+                    excmd="rbd export-diff --from-snap $latest_snap $current_snap - | tee >(sha512sum > $backup_file.sha512) | $compress > '$backup_file'"
                 else
                     excmd="rbd export-diff --from-snap $latest_snap $current_snap '$backup_file'"
                 fi
+                echo "DEBUG: $excmd"
                 if ! do_run "$excmd"; then
                     remove_snaphot "$current_snap" 0
 
