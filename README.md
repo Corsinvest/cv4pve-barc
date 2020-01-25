@@ -65,9 +65,12 @@ Options:
     --label              Is usually 'hourly', 'daily', 'weekly', or 'monthly'
     --path               Path destination backup
     --keep               Specify the number of backup which should will keep, Default 1 (can't be used with --renew)
+    --renew              Specify how many diffs may accumulate, until a full Backup is issued
     --cksum              Store checksums for snapshot validation (default: true)
+    --qemu-freeze        Issue fsfreeze-freeze prio snapshotting and fsfreeze-thaw after snapshot completion (default: true)
     --iothreads          Specify number of IO threads for exporting (default: 10)
-    --renew              Specify the number of incrementals backups store, until a full export is done again (can't be used with --keep)
+    --compress           Specify compression method [none,gzip,bzip2,pigz] (default: none)
+    --compressthreads    Specify compression threads for pigz (default: 1)
     --script             Use specified hook script
                          E.g. /usr/share/doc/eve4pve-barc/examples/script-hook.sh
     --syslog             Write messages into the system log
