@@ -4,7 +4,7 @@
 # Author: Daniele Corsini <daniele.corsini@enterpriseve.com>
 #         Bastian Mäuser <bma@netz.org>        
 
-declare -r VERSION=0.2.1
+declare -r VERSION=0.2.1a-renew
 declare -r NAME=$(basename "$0")
 declare -r PROGNAME=${NAME%.*}
 
@@ -745,8 +745,12 @@ function backup(){
             do_run "cp '$file_firewall' '$path_backup/$timestamp$EXT_FIREWALL'"
         fi
         vmok=$((vmok+1))
-        log info "VM $vm_id - -------- Merge diff file --------"
-        merge_diff_backup
+
+        # If no renew policy is set, do the merge magic
+        if [[ -z "opt_renew" ]]; then
+            log info "VM $vm_id - -------- Merge diff file --------"
+            merge_diff_backup
+        fi
     done
 
     vm_id=0
@@ -897,9 +901,10 @@ function restore(){
         local title="EnterpriseVE BARC | Restore image"
 
         #list all image available 
-        images=($(ls "$path_backup/"*$EXT_IMAGE | \
-                  xargs -n 1 basename | \
-                  awk '{printf "%s %s\n",substr($1,13,length($1)-16),substr($1,13,length($1)-16)}'))
+        #images=($(ls "$path_backup/"*$EXT_IMAGE | \
+        #          xargs -n 1 basename | \
+        #          awk '{printf "%s %s\n",substr($1,13,length($1)-16),substr($1,13,length($1)-16)}'))
+        images=($(ls -r "$path_backup/"*{$EXT_IMAGE,$EXT_DIFF} 2>/dev/null|xargs -n1 basename|awk '{ printf "%s %s\n", $0, $0}'))
 
         #select image to recovery
         local image;
@@ -910,17 +915,17 @@ function restore(){
         [ -z "$image" ] && exit 1
 
         #list all date available 
-        timestamps=($(ls -r "$path_backup/"*$image* | \
-                      xargs -n 1 basename | \
-                      awk '{print substr($1,1,12),substr($1,1,2) "-" substr($1,3,2) "-" substr($1,5,2) "_" substr($1,7,2) ":" substr($1,9,2) ":" substr($1,11,2)}'))
+        # timestamps=($(ls -r "$path_backup/"*$image* | \
+        #               xargs -n 1 basename | \
+        #               awk '{print substr($1,1,12),substr($1,1,2) "-" substr($1,3,2) "-" substr($1,5,2) "_" substr($1,7,2) ":" substr($1,9,2) ":" substr($1,11,2)}'))
 
-        #select timestamp
-        local timestamp
-        timestamp=$(whiptail --title "$title" \
-                    --menu "Choose from available date [$image]:" \
-                    --notags 25 60 14 "${timestamps[@]}" 3>&1 1>&2 2>&3)
+        # #select timestamp
+        # local timestamp
+        # timestamp=$(whiptail --title "$title" \
+        #             --menu "Choose from available date [$image]:" \
+        #             --notags 25 60 14 "${timestamps[@]}" 3>&1 1>&2 2>&3)
 
-        [ -z "$timestamp" ] && exit 1
+        # [ -z "$timestamp" ] && exit 1
 
         #list all pools
         pools=($(rados lspools | awk '{printf "%s %s\n",$1,$1}'))
@@ -928,7 +933,7 @@ function restore(){
         #select timestamp
         local pool_name; 
         pool_name=$(whiptail --title "$title" \
-                    --menu "Choose from available Ceph pools:" \
+                    --menu "Choose destination Ceph pool:" \
                     --notags 25 60 14 "${pools[@]}" 3>&1 1>&2 2>&3)
 
         [ -z "$pool_name" ] && exit 1
@@ -944,11 +949,11 @@ function restore(){
             if ! rbd ls "$pool_name" | grep -q "$name_import"; then
                 break;
             else
-                whiptail --title "$title" --msgbox "Image $pool_name/$name_import exist!" 8 78
+                whiptail --title "$title" --msgbox "Image $pool_name/$name_import already exist!" 8 78
             fi
         done
 
-        if ! whiptail --title "$title" --yesno "Confrim restore $image in $pool_name/$name_import?" 8 78; then
+        if ! whiptail --title "$title" --yesno "Confirm restore $image to $pool_name/$name_import?" 8 78; then
             exit 1
         fi
 
@@ -956,25 +961,70 @@ function restore(){
 
         log info "Start restore $(date "+%F %T")"
 
-        local backup=''
-        for backup in $path_backup/*$image*; do
-            local timestamp_snap; timestamp_snap=$(basename "$backup" | awk '{print substr($1,1,12)}')
-            if [[ $backup == *".img" ]]; then
-                #initial import 
-                log info "Initial import $(basename "$backup")"
-                do_run "rbd import --image-format 2 '$backup' $pool_name/$name_import"
-                #create initlal snap name
-                local snap_name_restore="$snap_name_prefix$timestamp_snap"
-                do_run "rbd snap create $pool_name/$name_import@$snap_name_restore"
-            elif [[ $timestamp_snap -lt $timestamp || $timestamp_snap -eq $timestamp ]]; then
-                #differential
-                log info "Differential $(basename "$backup")"
-                do_run "rbd import-diff '$backup' $pool_name/$name_import"
-            else
-                #skipped diffs, if not latest timestamp selected to restore
-                log info "Diff skipped - $(basename "$backup")"
+        #Create actionplan
+        regex='^([0-9]+)(.*)\.(.*)\.(.*)$'
+        [[ "$image" =~ $regex ]]
+        searchdisk=${BASH_REMATCH[3]}
+        local inchain=false
+        local -a plan
+        for backup_files in $(ls -r "$path_backup/"*{$EXT_IMAGE,$EXT_DIFF} 2>/dev/null|xargs -n1 basename); do
+            if [ "$backup_files" == "$image" ]; then
+                inchain=true
+            fi
+            if [ "$inchain" == true ]; then
+                [[ "$backup_files" =~ $regex ]]
+                founddisk=${BASH_REMATCH[3]}
+                ext=${BASH_REMATCH[4]}
+                if [ "$founddisk" == "$searchdisk" ]; then
+                    plan=("$backup_files" "${plan[@]}")
+                    if [[ "$ext" == "img" ]]; then
+                        break
+                    fi
+                fi
             fi
         done
+
+        #Execute actionplan
+        local backup=''
+        for backup in "${plan[@]}"; do
+            echo "DEBUG: $path_backup/$backup"
+            regex='^([0-9]+)(.*)\.(.*)\.(.*)$'
+            [[ "$backup" =~ $regex ]]
+            local timestamp_snap; timestamp_snap=${BASH_REMATCH[1]}
+            local ext; ext=${BASH_REMATCH[4]}
+            case ".$ext" in
+                "$EXT_IMAGE" )
+                    log info "Initial import $backup" 
+                    do_run "rbd import --image-format 2 '$path_backup/$backup' $pool_name/$name_import"
+                    local snap_name_restore="$snap_name_prefix$timestamp_snap"
+                    do_run "rbd snap create $pool_name/$name_import@$snap_name_restore"
+                    ;;
+                "$EXT_DIFF" )
+                    log info "Differential $backup"
+                    do_run "rbd import-diff '$path_backup/$backup' $pool_name/$name_import"
+                    ;;
+            esac
+        done
+
+        # local backup=''
+        # for backup in $path_backup/*$image*; do
+        #     local timestamp_snap; timestamp_snap=$(basename "$backup" | awk '{print substr($1,1,12)}')
+        #     if [[ $backup == *".img" ]]; then
+        #         #initial import 
+        #         log info "Initial import $(basename "$backup")"
+        #         do_run "rbd import --image-format 2 '$backup' $pool_name/$name_import"
+        #         #create initlal snap name
+        #         local snap_name_restore="$snap_name_prefix$timestamp_snap"
+        #         do_run "rbd snap create $pool_name/$name_import@$snap_name_restore"
+        #     elif [[ $timestamp_snap -lt $timestamp || $timestamp_snap -eq $timestamp ]]; then
+        #         #differential
+        #         log info "Differential $(basename "$backup")"
+        #         do_run "rbd import-diff '$backup' $pool_name/$name_import"
+        #     else
+        #         #skipped diffs, if not latest timestamp selected to restore
+        #         log info "Diff skipped - $(basename "$backup")"
+        #     fi
+        # done
 
         #remove all snapshots
         log info "Remove all snapshots"
@@ -986,6 +1036,9 @@ function restore(){
         call_hook_script "restore-job-end" "-" "-"
 
         log info "End restore $(date "+%F %T")"
+
+        log info "Issuing qm-rescan"
+        do_run "qm rescan"
 
         break;
     done
@@ -1076,7 +1129,7 @@ function assemble(){
         [ -z "$timestamp" ] && exit 1
 
         local new_image="assemble-$image" 
-        if ! whiptail --title "$title" --yesno "Confrim assemble $image in $new_image?" 8 78; then
+        if ! whiptail --title "$title" --yesno "Confirm assemble $image in $new_image?" 8 78; then
             exit 1
         fi
 
