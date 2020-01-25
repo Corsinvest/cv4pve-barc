@@ -24,7 +24,8 @@ declare -r EXT_CONF='.conf'
 declare -r EXT_FIREWALL='.fw'
 
 declare opt_vm_ids=''
-declare -i opt_keep=1
+declare -i opt_keep #=0
+declare -i opt_renew #=0
 declare -i opt_syslog=0
 declare -i opt_debug=0
 declare -i opt_dry_run=0
@@ -291,7 +292,7 @@ function parse_opts(){
     fi
 
     [ -z "$opt_label" ] && { log info "Label is not set correctly"; end_process 1; }
-    [ "$opt_keep" -le 0 ] && { log info "Keep is not set correctly. Value > 0."; end_process 1; }
+    [ "$opt_keep" ] && [ "$opt_keep" -le 0 ] && { log info "Keep is not set correctly. Value > 0."; end_process 1; }
 
     snap_name_prefix="barc$opt_label"
 }
@@ -582,18 +583,17 @@ function backup(){
                         break;
                     fi
                 fi
-                if [ "$diffcount" -gt "$opt_renew" ]; then
+                if [ "$diffcount" -ge "$opt_renew" ]; then
                     renew=true
                     break;
                 fi
             done
 
-            echo "RENEW?: $renew"
             #check exist initial export
             if ! exist_file "$path_backup/*$suffix_backup_file$EXT_IMAGE"; then
                 #initial export not exist            
+                log info "VM $vm_id - No previous backup: issueing full run" 
                 backup_file="$backup_file$EXT_IMAGE"
-                echo "DEBUG: FULL RUN $backup_file"
                 if ! create_snapshot "$current_snap"; then
                     rc=20                         
                     break;
@@ -601,8 +601,10 @@ function backup(){
                 export_type[$export_idx]="image"
             else
                 if [ "$renew" == true ]; then
+                    log info "VM $vm_id - Renew policy required full run" 
                     backup_file="$backup_file$EXT_IMAGE"
                 else
+                    log info "VM $vm_id - Renew policy tolerates incremental run" 
                     backup_file="$backup_file$EXT_DIFF"
                 fi
 
@@ -702,7 +704,6 @@ function backup(){
                 call_hook_script "export-post" "$current_snap" "$backup_file"
 
                 #Check if previous snapshots has to be removed
-                echo "debug: $image_spec@$latest_snap"
                 if [ "$latest_snap" != "" ]; then
                     remove_snaphot "$image_spec@$latest_snap" 1
                 fi
@@ -772,7 +773,6 @@ function sum_size_file(){
 function merge_diff_backup(){
     #loop all image
     local image=''
-    echo "DEBUG: $path_backup"
     for image in $path_backup/*$EXT_IMAGE; do
         image=$(basename "$image")
         
