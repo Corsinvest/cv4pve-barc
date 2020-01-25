@@ -572,22 +572,24 @@ function backup(){
             #obey renew policy
             local diffcount=0
             local renew=false
-            regex='^.*\.(.*)$'
-            for backup_files_present in $(ls -r $path_backup/*$suffix_backup_file{$EXT_DIFF,$EXT_IMAGE} 2>/dev/null); do
-                if [[ "$backup_files_present" =~ $regex ]]; then
-                    ext=${BASH_REMATCH[1]}
-                    if [ "$ext" == 'diff' ]; then
-                        diffcount=$((diffcount+1))
-                    else
-                        renew=false
+            if [[ "$opt_renew" -gt 0 ]]; then
+                regex='^.*\.(.*)$'
+                for backup_files_present in $(ls -r $path_backup/*$suffix_backup_file{$EXT_DIFF,$EXT_IMAGE} 2>/dev/null); do
+                    if [[ "$backup_files_present" =~ $regex ]]; then
+                        ext=${BASH_REMATCH[1]}
+                        if [ "$ext" == 'diff' ]; then
+                            diffcount=$((diffcount+1))
+                        else
+                            renew=false
+                            break;
+                        fi
+                    fi
+                    if [ "$diffcount" -ge "$opt_renew" ]; then
+                        renew=true
                         break;
                     fi
-                fi
-                if [ "$diffcount" -ge "$opt_renew" ]; then
-                    renew=true
-                    break;
-                fi
-            done
+                done
+            fi
 
             #check exist initial export
             if ! exist_file "$path_backup/*$suffix_backup_file$EXT_IMAGE"; then
@@ -747,7 +749,7 @@ function backup(){
         vmok=$((vmok+1))
 
         # If no renew policy is set, do the merge magic
-        if [[ -z "opt_renew" ]]; then
+        if [[ ! "$opt_renew" -gt 0 ]]; then
             log info "VM $vm_id - -------- Merge diff file --------"
             merge_diff_backup
         fi
@@ -779,8 +781,8 @@ function merge_diff_backup(){
     local image=''
     for image in $path_backup/*$EXT_IMAGE; do
         image=$(basename "$image")
-        
-        local suffix_backup_file=${image:12}        
+
+        local suffix_backup_file=${image:14}        
         suffix_backup_file=${suffix_backup_file%.*}
 
         local first_diff=''
@@ -1057,7 +1059,7 @@ function status(){
             [ ! -e "$image" ] && continue
 
             image=$(basename "$image")
-            image=${image:12:${#image}-12-4}
+            image=${image:14:${#image}-14-4}
 
             local backup=''
             for backup in $path_backup/*$image*; do
@@ -1075,7 +1077,7 @@ function status(){
                        "$(get_size_file "$backup")" \
                        "${filename:0:2}-${filename:2:2}-${filename:4:2}" \
                        "${filename:6:2}:${filename:8:2}:${filename:10:2}" \
-                       "${filename:12:${#filename}-13-${#extension}}"
+                       "${filename:14:${#filename}-15-${#extension}}"
             done
         done
     done
