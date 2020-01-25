@@ -24,8 +24,10 @@ declare -r EXT_CONF='.conf'
 declare -r EXT_FIREWALL='.fw'
 
 declare opt_vm_ids=''
+declare opt_cksum=true
 declare -i opt_keep #=0
 declare -i opt_renew #=0
+declare -i opt_iothreads=10
 declare -i opt_syslog=0
 declare -i opt_debug=0
 declare -i opt_dry_run=0
@@ -121,8 +123,10 @@ Options:
                          'storage-???' storage Proxmox VE (pool Ceph) 
     --label              Is usually 'hourly', 'daily', 'weekly', or 'monthly'
     --path               Path destination backup
-    --keep               Specify the number of backup which should will keep, Default 1
+    --keep               Specify the number of backup which should will keep, (default: 1)
     --renew              Specify how many diffs may accumulate, until a full Backup is issued
+    --cksum              Store checksums for snapshot validation (default: true)
+    --iothreads          Specify number of IO threads for exporting (default: 10)
     --script             Use specified hook script
                          E.g. /usr/share/doc/$PROGNAME/examples/script-hook.sh
     --syslog             Write messages into the system log
@@ -202,7 +206,7 @@ function parse_opts(){
     local args
     args=$(getopt \
            --options '' \
-           --longoptions=path:,vmid:,label:,keep:,renew:,mail: \
+           --longoptions=path:,vmid:,label:,keep:,renew:,cksum:,iothreads:,mail: \
            --longoptions=script:,syslog,debug,dry-run,unprotect-snap \
            --name "$PROGNAME" \
            -- "$@") \
@@ -216,6 +220,8 @@ function parse_opts(){
         --label) opt_label="$2"; shift 2;;
         --keep) opt_keep=$2; shift 2;;
         --renew) opt_renew=$2; shift 2;;
+        --cksum) opt_cksum=$2; shift 2;;
+        --iothreads) opt_iothreads=$2; shift 2;;
         --path) opt_path_backup="$2"; shift 2;;
         --script) opt_script="$2"; shift 2;;
         --syslog) opt_syslog=1; shift;;
@@ -689,7 +695,12 @@ function backup(){
                 call_hook_script "export-pre" "$current_snap" "$backup_file"
 
                 log info "VM $vm_id - Export initial '$backup_file'"
-                if ! do_run "rbd export --rbd-concurrent-management-ops 20 $current_snap '$backup_file'"; then
+                if [ "$opt_cksum" == true ]; then
+                    excmd="rbd export --rbd-concurrent-management-ops $opt_iothreads $current_snap - | tee >(sha512sum > $backup_file.sha512) | cat > '$backup_file'"
+                else 
+                    excmd="rbd export --rbd-concurrent-management-ops $opt_iothreads $current_snap '$backup_file'"
+                fi
+                if ! do_run "$excmd"; then
                     remove_snaphot "$current_snap" 0
 
                     call_hook_script "export-abort" "$current_snap" "$backup_file"
@@ -712,9 +723,13 @@ function backup(){
             elif [ "$type" == "diff" ]; then
                 #export-diff difference previous snapshot 
                 call_hook_script "export-diff-pre" "$current_snap" "$backup_file"
-
                 log info "VM $vm_id - Export diff '$backup_file'"
-                if ! do_run "rbd export-diff --from-snap $latest_snap $current_snap '$backup_file'"; then
+                if [ "$opt_cksum" == true ]; then
+                    excmd="rbd export-diff --from-snap $latest_snap $current_snap - | tee >(sha512sum > $backup_file.sha512) | cat > '$backup_file'"
+                else
+                    excmd="rbd export-diff --from-snap $latest_snap $current_snap '$backup_file'"
+                fi
+                if ! do_run "$excmd"; then
                     remove_snaphot "$current_snap" 0
 
                     call_hook_script "export-diff-abort" "$current_snap" "$backup_file"

@@ -65,6 +65,8 @@ Options:
     --label              Is usually 'hourly', 'daily', 'weekly', or 'monthly'
     --path               Path destination backup
     --keep               Specify the number of backup which should will keep, Default 1 (can't be used with --renew)
+    --cksum              Store checksums for snapshot validation (default: true)
+    --iothreads          Specify number of IO threads for exporting (default: 10)
     --renew              Specify the number of incrementals backups store, until a full export is done again (can't be used with --keep)
     --script             Use specified hook script
                          E.g. /usr/share/doc/eve4pve-barc/examples/script-hook.sh
@@ -91,6 +93,7 @@ For _continuous data protection_ see
 * For KVM and LXC
 * Can keep multiple backup
 * Can obey a renew policy: (eg. 1 full exports, then 6 incremental exports)
+* Supports checksumming
 * Syslog integration
 * Multiple schedule VM/CT using --label (es. daily,monthly)
 * Hook script
