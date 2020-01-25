@@ -26,8 +26,8 @@ hook() {
         snap-create-post);;
         snap-create-abort) ssh root@$EVE4PVE_BARC_HOST /usr/sbin/qm guest cmd $EVE4PVE_BARC_VMID fsfreeze-thaw;;
 
-        snap-vm-pre) echo "snap-vm-pre -- " && ssh root@$EVE4PVE_BARC_HOST /usr/sbin/qm guest cmd $EVE4PVE_BARC_VMID fsfreeze-freeze;;  
-        snap-vm-post) echo "snap-vm-post -- " && ssh root@$EVE4PVE_BARC_HOST /usr/sbin/qm guest cmd $EVE4PVE_BARC_VMID fsfreeze-thaw;;
+        snap-vm-pre) ssh root@$EVE4PVE_BARC_HOST /usr/sbin/qm guest cmd $EVE4PVE_BARC_VMID fsfreeze-freeze;;  
+        snap-vm-post) ssh root@$EVE4PVE_BARC_HOST /usr/sbin/qm guest cmd $EVE4PVE_BARC_VMID fsfreeze-thaw;;
 
         #export
         export-pre);;
