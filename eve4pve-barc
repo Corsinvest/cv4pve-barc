@@ -1126,7 +1126,7 @@ function status(){
             image=${image:14:${#image}-14-4}
 
             local backup=''
-            for backup in $path_backup/*$image*; do
+            for backup in $path_backup/*$image*{$EXT_DIFF,$EXT_IMAGE}; do
                 if [ $print_header -eq 1 ]; then
                     print_header=0
                     echo "VM  TYPE SIZE  BACKUP            IMAGE"
