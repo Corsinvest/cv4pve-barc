@@ -745,7 +745,7 @@ function backup(){
 
                 log info "VM $vm_id - Export initial '$backup_file'"
                 if [ "$opt_cksum" == true ]; then
-                    excmd="rbd export --rbd-concurrent-management-ops $opt_iothreads $current_snap - | tee >(sha512sum > $backup_file.sha512) | $compress > '$backup_file'"
+                    excmd="rbd export --rbd-concurrent-management-ops $opt_iothreads $current_snap - | tee >($compress > '$backup_file') | sha512sum > $backup_file.sha512"
                 else 
                     excmd="rbd export --rbd-concurrent-management-ops $opt_iothreads $current_snap '$backup_file'"
                 fi
@@ -774,7 +774,7 @@ function backup(){
                 call_hook_script "export-diff-pre" "$current_snap" "$backup_file"
                 log info "VM $vm_id - Export diff '$backup_file'"
                 if [ "$opt_cksum" == true ]; then
-                    excmd="rbd export-diff --from-snap $latest_snap $current_snap - | tee >(sha512sum > $backup_file.sha512) | $compress > '$backup_file'"
+                    excmd="rbd export-diff --from-snap $latest_snap $current_snap - | tee >($compress > '$backup_file') | sha512sum > $backup_file.sha512"
                 else
                     excmd="rbd export-diff --from-snap $latest_snap $current_snap '$backup_file'"
                 fi
