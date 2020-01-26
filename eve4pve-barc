@@ -54,6 +54,8 @@ declare -i -g snapshotok
 declare -i -g exporttotal
 declare -i -g exportok
 declare -i -g bytecount
+declare -g startts
+declare -g endts
 
 function map_vmids_to_host(){
     for node in $(/usr/bin/pvecm nodes | tail +5 | tr -s ' ' | cut -d' ' -f 4)
@@ -530,6 +532,7 @@ function backup(){
 
     parse_opts "$@"
 
+    startts=$(date +%s)
     log info "ACTION: Backup"
 
     local timestamp; timestamp=$(date +%Y%m%d%H%M%S)
@@ -827,7 +830,7 @@ function backup(){
 
     timestamp=$(date +%Y%m%d%H%M%S)
     log info "End backup $(date "+%F %T")"
-
+    endts=$(date +%s)
     end_process $rc 
 }
 
@@ -1226,7 +1229,10 @@ function assemble(){
 
 function end_process(){
     local -i rc=$1;
-    local subject="Ceph [VM: $vmok/$vmtotal SS: $snapshotok/$snapshottotal EX: $exportok/$exporttotal] [$(bytesToHuman "$bytecount")]"
+    local -i runtime=$(expr $endts - $startts)
+    local -i bps=$(expr $bytecount/$runtime)
+    log debug "startts:$startts endts:$endts runtime:$runtime bytecount:$bytecount bps:$bps"
+    local subject="Ceph [VM:$vmok/$vmtotal SS:$snapshotok/$snapshottotal EX:$exportok/$exporttotal] [$(bytesToHuman "$bytecount")@$(bytesToHuman "$bps")/s]"
     [ $rc != 0 ] && subject="$subject [ERROR]"
 
     #send email
