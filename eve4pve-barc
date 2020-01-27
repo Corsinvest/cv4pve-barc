@@ -25,6 +25,7 @@ declare -r EXT_FIREWALL='.fw'
 
 declare opt_vm_ids=''
 declare opt_cksum=true
+declare opt_ckmethod="sha1sum"
 declare opt_compress="none"
 declare opt_compressthreads=1
 declare opt_qemu_freeze=true
@@ -56,6 +57,14 @@ declare -i -g exportok
 declare -i -g bytecount
 declare -g startts
 declare -g endts
+declare -A -g ckext
+ckext["md5sum"]="md5"
+ckext["sha1sum"]="sha1"
+ckext["sha224sum"]="sha224"
+ckext["sha256sum"]="sha256"
+ckext["sha384sum"]="sha384"
+ckext["sha512sum"]="sha512"
+
 
 function map_vmids_to_host(){
     for node in $(/usr/bin/pvecm nodes | tail +5 | tr -s ' ' | cut -d' ' -f 4)
@@ -131,6 +140,7 @@ Options:
     --keep               Specify the number of backup which should will keep, (default: 1)
     --renew              Specify how many diffs may accumulate, until a full Backup is issued
     --cksum              Store checksums for snapshot validation (default: true)
+    --ckmethod           Method used for Checksumming [m5sum, sha1sum, sha224sum, sha384sum, sha512sum] (default: sha1sum)
     --qemu-freeze        Issue fsfreeze-freeze prio snapshotting and fsfreeze-thaw after snapshot completion (default: true)
     --iothreads          Specify number of IO threads for exporting (default: 10)
     --compress           Specify compression method [none,gzip,bzip2,pigz] (default: none)
@@ -214,7 +224,7 @@ function parse_opts(){
     local args
     args=$(getopt \
            --options '' \
-           --longoptions=path:,vmid:,label:,keep:,renew:,cksum:,iothreads:,compress:,compressthreads:,mail: \
+           --longoptions=path:,vmid:,label:,keep:,renew:,cksum:,ckmethod:,iothreads:,compress:,compressthreads:,mail: \
            --longoptions=script:,syslog,debug,dry-run,unprotect-snap,qemu-freeze \
            --name "$PROGNAME" \
            -- "$@") \
@@ -229,6 +239,7 @@ function parse_opts(){
         --keep) opt_keep=$2; shift 2;;
         --renew) opt_renew=$2; shift 2;;
         --cksum) opt_cksum=$2; shift 2;;
+        --ckmethod) opt_ckmethod=$2; shift 2;;
         --iothreads) opt_iothreads=$2; shift 2;;
         --compress) opt_compress=$2; shift;;
         --compressthreads) opt_compressthreads=$2; shift;;
@@ -259,6 +270,11 @@ function parse_opts(){
 
     if [ "$action" != "reset" ]; then
         [ ! -d "$opt_path_backup" ] && { log info "Path Backup is not set"; end_process 1; }
+    fi
+
+    if ! [[ "$opt_ckmethod" == "md5sum" || "$opt_ckmethod" == "sha1sum" || "$opt_ckmethod" == "sha224sum" || "$opt_ckmethod" == "sha384sum" || "$opt_ckmethod" == "sha512sum" ]]; then
+        log info "Invalid --ckmethod."
+        end_process 1
     fi
 
     if [ "$opt_keep" ] && [ "$opt_renew" ]; then
@@ -378,7 +394,7 @@ function vm_freeze() {
     local cmd="ssh root@$fhost /usr/sbin/qm guest cmd $fvm fsfreeze-freeze"
     log info "VM $fvm - Issuing fsfreeze-freeze to $fvm on $fhost"
     log debug "$cmd"
-    eval "$cmd"
+    do_run "$cmd"
     rc=$?
     log debug "vm_freeze() return $rc"
 }
@@ -389,7 +405,7 @@ function vm_unfreeze() {
     local cmd="ssh root@$fhost /usr/sbin/qm guest cmd $fvm fsfreeze-thaw"
     log info "VM $fvm - Issuing fsfreeze-thaw to $fvm on $fhost"
     log debug "$cmd"
-    eval "$cmd"
+    do_run "$cmd"
     rc=$?
     log debug "vm_unfreeze() return $rc"
 }
@@ -748,7 +764,7 @@ function backup(){
 
                 log info "VM $vm_id - Export initial '$backup_file'"
                 if [ "$opt_cksum" == true ]; then
-                    excmd="rbd export --rbd-concurrent-management-ops $opt_iothreads $current_snap - | tee >($compress > '$backup_file') | sha512sum > $backup_file.sha512"
+                    excmd="rbd export --rbd-concurrent-management-ops $opt_iothreads $current_snap - | tee >($compress > '$backup_file') | $opt_ckmethod > $backup_file.${ckext[$opt_ckmethod]}"
                 else 
                     excmd="rbd export --rbd-concurrent-management-ops $opt_iothreads $current_snap '$backup_file'"
                 fi
@@ -777,7 +793,7 @@ function backup(){
                 call_hook_script "export-diff-pre" "$current_snap" "$backup_file"
                 log info "VM $vm_id - Export diff '$backup_file'"
                 if [ "$opt_cksum" == true ]; then
-                    excmd="rbd export-diff --from-snap $latest_snap $current_snap - | tee >($compress > '$backup_file') | sha512sum > $backup_file.sha512"
+                    excmd="rbd export-diff --from-snap $latest_snap $current_snap - | tee >($compress > '$backup_file') | $opt_ckmethod > $backup_file.${ckext[$opt_ckmethod]}"
                 else
                     excmd="rbd export-diff --from-snap $latest_snap $current_snap '$backup_file'"
                 fi
@@ -914,7 +930,7 @@ function get_config_file(){
         file_config=$(ls $LXC_CONF_CLUSTER/$vm_id$EXT_CONF)
     
     else
-        log error "VM $vm_id - Unknown tecnology"
+        log error "VM $vm_id - Unknown technology"
 
     fi 
 
@@ -1229,8 +1245,10 @@ function assemble(){
 
 function end_process(){
     local -i rc=$1;
-    local -i runtime=$(expr $endts - $startts)
-    local -i bps=$(expr $bytecount/$runtime)
+    if ! [[ -z "$startts" && -z "$endts" ]]; then
+        local -i runtime=$(expr $endts - $startts)
+        local -i bps=$(expr $bytecount/$runtime)
+    fi
     log debug "startts:$startts endts:$endts runtime:$runtime bytecount:$bytecount bps:$bps"
     local subject="Ceph [VM:$vmok/$vmtotal SS:$snapshotok/$snapshottotal EX:$exportok/$exporttotal] [$(bytesToHuman "$bytecount")@$(bytesToHuman "$bps")/s]"
     [ $rc != 0 ] && subject="$subject [ERROR]"
