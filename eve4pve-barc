@@ -23,6 +23,9 @@ declare -r EXT_DIFF='.diff'
 declare -r EXT_CONF='.conf'
 declare -r EXT_FIREWALL='.fw'
 
+declare -r -A -g ckext=( [md5sum]="md5" [sha1sum]="sha1" [sha224sum]="sha224" [sha256sum]="sha256" [sha384sum]="sha384" [sha512sum]="sha512" )
+declare -r -A -g compext=( [none]="" [gzip]=".gz" [bzip2]=".bz2" [pigz]=".gz")
+
 declare opt_vm_ids=''
 declare opt_cksum=true
 declare opt_ckmethod="sha1sum"
@@ -57,14 +60,6 @@ declare -i -g exportok
 declare -i -g bytecount
 declare -g startts
 declare -g endts
-declare -A -g ckext
-ckext["md5sum"]="md5"
-ckext["sha1sum"]="sha1"
-ckext["sha224sum"]="sha224"
-ckext["sha256sum"]="sha256"
-ckext["sha384sum"]="sha384"
-ckext["sha512sum"]="sha512"
-
 
 function map_vmids_to_host(){
     for node in $(/usr/bin/pvecm nodes | tail +5 | tr -s ' ' | cut -d' ' -f 4)
@@ -241,7 +236,7 @@ function parse_opts(){
         --cksum) opt_cksum=$2; shift 2;;
         --ckmethod) opt_ckmethod=$2; shift 2;;
         --iothreads) opt_iothreads=$2; shift 2;;
-        --compress) opt_compress=$2; shift;;
+        --compress) opt_compress=$2; shift 2;;
         --compressthreads) opt_compressthreads=$2; shift;;
         --qemu-freeze) opt_qemu_freeze=true; shift;;
         --path) opt_path_backup="$2"; shift 2;;
@@ -392,7 +387,7 @@ function vm_freeze() {
     local fvm=$1;
     local fhost=$2;
     status=$(ssh root@$fhost qm status $fvm|cut -d' ' -f 2)
-    if ! [[ "status" == "running" ]]; then
+    if ! [[ "$status" == "running" ]]; then
         log info "VM $fvm - Not running, skipping fsfreeze-freeze"
         return
     fi
@@ -408,7 +403,7 @@ function vm_unfreeze() {
     local fvm=$1;
     local fhost=$2;
     status=$(ssh root@$fhost qm status $fvm|cut -d' ' -f 2)
-    if ! [[ "status" == "running" ]]; then
+    if ! [[ "$status" == "running" ]]; then
         log info "VM $fvm - Not running, skipping fsfreeze-thaw"
         return
     fi
@@ -639,10 +634,11 @@ function backup(){
             local diffcount=0
             local renew=false
             if [[ "$opt_renew" -gt 0 ]]; then
-                regex='^.*\.(.*)$'
-                for backup_files_present in $(ls -r $path_backup/*$suffix_backup_file{$EXT_DIFF,$EXT_IMAGE} 2>/dev/null); do
+                #regex='^.*\.(.*)$'
+                regex='^.*\/([0-9]+)([a-zA-Z-]+)\.(.*)\.(diff|img).?(.*)?'
+                for backup_files_present in $(ls -r $path_backup/*$suffix_backup_file{$EXT_DIFF,$EXT_IMAGE}{.gz,.bz2,} 2>/dev/null); do
                     if [[ "$backup_files_present" =~ $regex ]]; then
-                        ext=${BASH_REMATCH[1]}
+                        ext=${BASH_REMATCH[4]}
                         if [ "$ext" == 'diff' ]; then
                             diffcount=$((diffcount+1))
                         else
@@ -656,9 +652,9 @@ function backup(){
                     fi
                 done
             fi
-
+            #exit
             #check exist initial export
-            if ! exist_file "$path_backup/*$suffix_backup_file$EXT_IMAGE"; then
+            if ! exist_file "$path_backup/*$suffix_backup_file$EXT_IMAGE*"; then
                 #initial export not exist            
                 log info "VM $vm_id - No previous backup: issueing full run" 
                 backup_file="$backup_file$EXT_IMAGE"
@@ -749,7 +745,7 @@ function backup(){
             exporttotal=$((exporttotal+1))
             image_spec=${export_image_spec[$i]};
             current_snap=${export_current_snap[$i]};
-            backup_file=${export_backup_file[$i]};
+            backup_file="${export_backup_file[$i]}${compext[$opt_compress]}";
             latest_snap=${export_latest_snap[$i]};
             type=${export_type[$i]};
 
@@ -760,7 +756,7 @@ function backup(){
                 "gzip" )
                     compress="gzip"
                     ;;
-                "gzip" )
+                "bzip2" )
                     compress="bzip2"
                     ;;
                 "pigz" )
@@ -778,6 +774,7 @@ function backup(){
                 else 
                     excmd="rbd export --rbd-concurrent-management-ops $opt_iothreads $current_snap '$backup_file'"
                 fi
+                log info "VM $vm_id - excmd: $excmd"
                 if ! do_run "$excmd"; then
                     remove_snaphot "$current_snap" 0
 
@@ -807,7 +804,7 @@ function backup(){
                 else
                     excmd="rbd export-diff --from-snap $latest_snap $current_snap '$backup_file'"
                 fi
-                echo "DEBUG: $excmd"
+                log info "VM $vmid - excmd: $excmd"
                 if ! do_run "$excmd"; then
                     remove_snaphot "$current_snap" 0
 
@@ -987,19 +984,16 @@ function reset(){
 
 function restore(){
     parse_opts "$@"
+    local compress
 
     log info "ACTION: Restore image"
 
     for vm_id in $vm_ids; do
         get_path   
-
+        
         local title="EnterpriseVE BARC | Restore image"
 
-        #list all image available 
-        #images=($(ls "$path_backup/"*$EXT_IMAGE | \
-        #          xargs -n 1 basename | \
-        #          awk '{printf "%s %s\n",substr($1,13,length($1)-16),substr($1,13,length($1)-16)}'))
-        images=($(ls -r "$path_backup/"*{$EXT_IMAGE,$EXT_DIFF} 2>/dev/null|xargs -n1 basename|awk '{ printf "%s %s\n", $0, $0}'))
+        images=($(ls -r "$path_backup/"*{$EXT_IMAGE,$EXT_DIFF}{,.gz,.bz2} 2>/dev/null|xargs -n1 basename|awk '{ printf "%s %s\n", $0, $0}'))
 
         #select image to recovery
         local image;
@@ -1008,19 +1002,6 @@ function restore(){
                 --notags 25 60 14 "${images[@]}" 3>&1 1>&2 2>&3)
 
         [ -z "$image" ] && exit 1
-
-        #list all date available 
-        # timestamps=($(ls -r "$path_backup/"*$image* | \
-        #               xargs -n 1 basename | \
-        #               awk '{print substr($1,1,12),substr($1,1,2) "-" substr($1,3,2) "-" substr($1,5,2) "_" substr($1,7,2) ":" substr($1,9,2) ":" substr($1,11,2)}'))
-
-        # #select timestamp
-        # local timestamp
-        # timestamp=$(whiptail --title "$title" \
-        #             --menu "Choose from available date [$image]:" \
-        #             --notags 25 60 14 "${timestamps[@]}" 3>&1 1>&2 2>&3)
-
-        # [ -z "$timestamp" ] && exit 1
 
         #list all pools
         pools=($(rados lspools | awk '{printf "%s %s\n",$1,$1}'))
@@ -1057,12 +1038,12 @@ function restore(){
         log info "Start restore $(date "+%F %T")"
 
         #Create actionplan
-        regex='^([0-9]+)(.*)\.(.*)\.(.*)$'
+        regex='^([0-9]+)([a-zA-Z-]+)\.(.*)\.(diff|img).?(.*)?'
         [[ "$image" =~ $regex ]]
         searchdisk=${BASH_REMATCH[3]}
         local inchain=false
         local -a plan
-        for backup_files in $(ls -r "$path_backup/"*{$EXT_IMAGE,$EXT_DIFF} 2>/dev/null|xargs -n1 basename); do
+        for backup_files in $(ls -r "$path_backup/"*{$EXT_IMAGE,$EXT_DIFF}{,.gz,.bz2} 2>/dev/null|xargs -n1 basename); do
             if [ "$backup_files" == "$image" ]; then
                 inchain=true
             fi
@@ -1082,44 +1063,60 @@ function restore(){
         #Execute actionplan
         local backup=''
         for backup in "${plan[@]}"; do
-            echo "DEBUG: $path_backup/$backup"
-            regex='^([0-9]+)(.*)\.(.*)\.(.*)$'
+            regex='^([0-9]+)([a-zA-Z-]+)\.(.*)\.(diff|img).?(.*)?'
             [[ "$backup" =~ $regex ]]
             local timestamp_snap; timestamp_snap=${BASH_REMATCH[1]}
             local ext; ext=${BASH_REMATCH[4]}
+            local cext; cext=${BASH_REMATCH[5]}
+            case "$cext" in
+                "gz" )
+                    compress="gunzip -c"
+                    ;;
+                "bz2" )
+                    compress="bzip2 -d"
+                    ;;
+                "pgz" )
+                    compress="pigz -d -p $opt_compressthreads"
+                    ;;
+                "" )
+                    compress="cat"
+                    ;;
+            esac
+            local streamcksum
             case ".$ext" in
                 "$EXT_IMAGE" )
                     log info "Initial import $backup" 
-                    do_run "rbd import --image-format 2 '$path_backup/$backup' $pool_name/$name_import"
+                    cmd="$compress '$path_backup/$backup'| tee >(rbd import --no-progress --image-format 2 - $pool_name/$name_import) | $opt_ckmethod"
+                    streamcksum=$(eval "$cmd")
+                    if [ -e "$path_backup/$backup.${ckext[$opt_ckmethod]}" ]; then
+                        storedcksum=$(<$path_backup/$backup.${ckext[$opt_ckmethod]})
+                        if [ "$storedcksum" == "$streamcksum" ]; then
+                            log info "VM $vm_id - Checksum match: $streamcksum ($storedcksum / $streamcksum)"
+                        else
+                            log error "VM $vm_id - Checksum missmatch. Check chain.."
+                            exit 1
+                        fi
+                    fi
                     local snap_name_restore="$snap_name_prefix$timestamp_snap"
                     do_run "rbd snap create $pool_name/$name_import@$snap_name_restore"
                     ;;
                 "$EXT_DIFF" )
                     log info "Differential $backup"
-                    do_run "rbd import-diff '$path_backup/$backup' $pool_name/$name_import"
+                    cmd="$compress '$path_backup/$backup' | tee >(rbd import-diff --no-progress - $pool_name/$name_import) | $opt_ckmethod "
+                    streamcksum=$(eval "$cmd")
+                    if [ -e "$path_backup/$backup.${ckext[$opt_ckmethod]}" ]; then
+                        storedcksum=$(<$path_backup/$backup.${ckext[$opt_ckmethod]})
+                        log info "VM $vm_id - Checksums: ($storedcksum / $streamcksum)"
+                        if [ "$storedcksum" == "$streamcksum" ]; then
+                            log info "VM $vm_id - Checksum match: $streamcksum ($storedcksum / $streamcksum)"
+                        else
+                            log error "VM $vm_id - Checksum missmatch. Check chain.."
+                            exit 1
+                        fi
+                    fi
                     ;;
             esac
         done
-
-        # local backup=''
-        # for backup in $path_backup/*$image*; do
-        #     local timestamp_snap; timestamp_snap=$(basename "$backup" | awk '{print substr($1,1,12)}')
-        #     if [[ $backup == *".img" ]]; then
-        #         #initial import 
-        #         log info "Initial import $(basename "$backup")"
-        #         do_run "rbd import --image-format 2 '$backup' $pool_name/$name_import"
-        #         #create initlal snap name
-        #         local snap_name_restore="$snap_name_prefix$timestamp_snap"
-        #         do_run "rbd snap create $pool_name/$name_import@$snap_name_restore"
-        #     elif [[ $timestamp_snap -lt $timestamp || $timestamp_snap -eq $timestamp ]]; then
-        #         #differential
-        #         log info "Differential $(basename "$backup")"
-        #         do_run "rbd import-diff '$backup' $pool_name/$name_import"
-        #     else
-        #         #skipped diffs, if not latest timestamp selected to restore
-        #         log info "Diff skipped - $(basename "$backup")"
-        #     fi
-        # done
 
         #remove all snapshots
         log info "Remove all snapshots"
