@@ -391,6 +391,11 @@ EOL
 function vm_freeze() {
     local fvm=$1;
     local fhost=$2;
+    status=$(ssh root@$fhost qm status $fvm|cut -d' ' -f 2)
+    if ! [[ "status" == "running" ]]; then
+        log info "VM $fvm - Not running, skipping fsfreeze-freeze"
+        return
+    fi
     local cmd="ssh root@$fhost /usr/sbin/qm guest cmd $fvm fsfreeze-freeze"
     log info "VM $fvm - Issuing fsfreeze-freeze to $fvm on $fhost"
     log debug "$cmd"
@@ -402,6 +407,11 @@ function vm_freeze() {
 function vm_unfreeze() {
     local fvm=$1;
     local fhost=$2;
+    status=$(ssh root@$fhost qm status $fvm|cut -d' ' -f 2)
+    if ! [[ "status" == "running" ]]; then
+        log info "VM $fvm - Not running, skipping fsfreeze-thaw"
+        return
+    fi
     local cmd="ssh root@$fhost /usr/sbin/qm guest cmd $fvm fsfreeze-thaw"
     log info "VM $fvm - Issuing fsfreeze-thaw to $fvm on $fhost"
     log debug "$cmd"
