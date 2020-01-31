@@ -4,14 +4,14 @@
 # Process environment variables as received from and set by eve4pve-barc.
 
 hook() {
-    echo "EVE4PVE_BARC_PHASE:       $EVE4PVE_BARC_PHASE" 
-    echo "EVE4PVE_BARC_VMID:        $EVE4PVE_BARC_VMID" 
-    echo "EVE4PVE_BARC_PATH:        $EVE4PVE_BARC_PATH" 
-    echo "EVE4PVE_BARC_LABEL:       $EVE4PVE_BARC_LABEL" 
-    echo "EVE4PVE_BARC_KEEP:        $EVE4PVE_BARC_KEEP" 
-    echo "EVE4PVE_BARC_SNAP_NAME:   $EVE4PVE_BARC_SNAP_NAME" 
-    echo "EVE4PVE_BARC_BACKUP_FILE: $EVE4PVE_BARC_BACKUP_FILE" 
-
+#    echo "EVE4PVE_BARC_PHASE:       $EVE4PVE_BARC_PHASE" 
+#    echo "EVE4PVE_BARC_VMID:        $EVE4PVE_BARC_VMID" 
+#    echo "EVE4PVE_BARC_PATH:        $EVE4PVE_BARC_PATH" 
+#    echo "EVE4PVE_BARC_LABEL:       $EVE4PVE_BARC_LABEL" 
+#    echo "EVE4PVE_BARC_KEEP:        $EVE4PVE_BARC_KEEP" 
+#    echo "EVE4PVE_BARC_SNAP_NAME:   $EVE4PVE_BARC_SNAP_NAME" 
+#    echo "EVE4PVE_BARC_BACKUP_FILE: $EVE4PVE_BARC_BACKUP_FILE" 
+#    echo "EVE4PVE_BARC_HOST:        $EVE4PVE_BARC_HOST"
     case "$EVE4PVE_BARC_PHASE" in
         #clean job status
         clean-job-start);;

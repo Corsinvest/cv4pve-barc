@@ -64,7 +64,13 @@ Options:
                          'storage-???' storage Proxmox VE (pool Ceph) 
     --label              Is usually 'hourly', 'daily', 'weekly', or 'monthly'
     --path               Path destination backup
-    --keep               Specify the number of backup which should will keep, Default 1
+    --keep               Specify the number of backup which should will keep, Default 1 (can't be used with --renew)
+    --renew              Specify how many diffs may accumulate, until a full Backup is issued
+    --cksum              Store checksums for snapshot validation (default: true)
+    --qemu-freeze        Issue fsfreeze-freeze prio snapshotting and fsfreeze-thaw after snapshot completion (default: true)
+    --iothreads          Specify number of IO threads for exporting (default: 10)
+    --compress           Specify compression method [none,gzip,bzip2,pigz] (default: none)
+    --compressthreads    Specify compression threads for pigz (default: 1)
     --script             Use specified hook script
                          E.g. /usr/share/doc/eve4pve-barc/examples/script-hook.sh
     --syslog             Write messages into the system log
@@ -77,8 +83,8 @@ Report bugs to <support@enterpriseve.com>
 
 ## Introduction
 
-Backup And Restore Ceph for Proxmox VE with retention. This solution implement
-backup for Ceph cluster exporting to specific directory. The mechanism using
+Backup And Restore Ceph for Proxmox VE with retention. This solution implements
+a snapshotbackup for Ceph cluster exporting to specific directory. The mechanism using
 Ceph snapshot, export and export differential. In backup export image and config
 file VM/CT.
 
@@ -89,6 +95,8 @@ For _continuous data protection_ see
 
 * For KVM and LXC
 * Can keep multiple backup
+* Can obey a renew policy: (eg. 1 full exports, then 6 incremental exports)
+* Supports checksumming
 * Syslog integration
 * Multiple schedule VM/CT using --label (es. daily,monthly)
 * Hook script
@@ -111,7 +119,7 @@ deletion. In Proxom VE remove VM not possible with error "Removing all
 snapshots: 0% complete...failed". The problem is **Proxmox VE unprotect only the
 snapshos it knows**.
 
-Whit parameter **--unprotect-snap** is possible to disable protection snap.
+Whit parameter **--unprotect-snap** is possible to disable snapshot protection.
 
 ## Configuration and use
 
