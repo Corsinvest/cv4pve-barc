@@ -1129,8 +1129,12 @@ function restore(){
 
         log info "End restore $(date "+%F %T")"
 
+        map_vmids_to_host
+
+        
+
         log info "Issuing qm-rescan"
-        do_run "qm rescan"
+        do_run "ssh root@${pvnode[$vm_id]} qm rescan"
 
         break;
     done
