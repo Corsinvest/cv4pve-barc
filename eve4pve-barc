@@ -4,7 +4,7 @@
 # Author: Daniele Corsini <daniele.corsini@enterpriseve.com>
 #         Bastian Mäuser <bma@netz.org>        
 
-declare -r VERSION=0.2.1a-renew
+declare -r VERSION=0.2.1b-renew
 declare -r NAME=$(basename "$0")
 declare -r PROGNAME=${NAME%.*}
 
@@ -605,8 +605,8 @@ function backup(){
         local latest_snap
         local compress
 
-        log info "VM $vm_id - ======== Start backup ========"
-        log info "VM $vm_id - -------- Snapshots Disks --------"
+        log info "VM $vm_id - ======== Start backup VMID $vm_id ========"
+        log info "VM $vm_id - -------- Snapshots Disks VMID $vm_id--------"
 
         [[ "$opt_qemu_freeze" == true ]] && vm_freeze "$vm_id" "${pvnode[$vm_id]}"
 
@@ -656,7 +656,7 @@ function backup(){
             #check exist initial export
             if ! exist_file "$path_backup/*$suffix_backup_file$EXT_IMAGE*"; then
                 #initial export not exist            
-                log info "VM $vm_id - No previous backup: issueing full run" 
+                log info "VM $vm_id - No previous backup: issueing full run for $disk" 
                 backup_file="$backup_file$EXT_IMAGE"
                 if ! create_snapshot "$current_snap"; then
                     [[ "$opt_qemu_freeze" == true ]] && vm_unfreeze "$vm_id" "${pvnode[$vm_id]}"
@@ -666,10 +666,10 @@ function backup(){
                 export_type[$export_idx]="image"
             else
                 if [ "$renew" == true ]; then
-                    log info "VM $vm_id - Renew policy required full run" 
+                    log info "VM $vm_id - Renew policy requires full run for $disk" 
                     backup_file="$backup_file$EXT_IMAGE"
                 else
-                    log info "VM $vm_id - Renew policy tolerates incremental run" 
+                    log info "VM $vm_id - Renew policy tolerates incremental run for $disk" 
                     backup_file="$backup_file$EXT_DIFF"
                 fi
 
@@ -1036,6 +1036,8 @@ function restore(){
         call_hook_script "restore-job-start" "-" "-"
 
         log info "Start restore $(date "+%F %T")"
+        
+        startts=$(date +%s)
 
         #Create actionplan
         regex='^([0-9]+)([a-zA-Z-]+)\.(.*)\.(diff|img).?(.*)?'
@@ -1091,11 +1093,12 @@ function restore(){
                     if [ -e "$path_backup/$backup.${ckext[$opt_ckmethod]}" ]; then
                         storedcksum=$(<$path_backup/$backup.${ckext[$opt_ckmethod]})
                         if [ "$storedcksum" == "$streamcksum" ]; then
-                            log info "VM $vm_id - Checksum match: $streamcksum ($storedcksum / $streamcksum)"
+                            log info "VM $vm_id - Checksum match: ($storedcksum / $streamcksum)"
                         else
-                            log error "VM $vm_id - Checksum missmatch. Check chain.."
+                            log error "VM $vm_id - Checksum missmatch. Check chain. ($storedcksum / $streamcksum)"
                             exit 1
                         fi
+                        bytecount=$((bytecount+$(sum_size_file "$path_backup/$backup")))
                     fi
                     local snap_name_restore="$snap_name_prefix$timestamp_snap"
                     do_run "rbd snap create $pool_name/$name_import@$snap_name_restore"
@@ -1106,13 +1109,13 @@ function restore(){
                     streamcksum=$(eval "$cmd")
                     if [ -e "$path_backup/$backup.${ckext[$opt_ckmethod]}" ]; then
                         storedcksum=$(<$path_backup/$backup.${ckext[$opt_ckmethod]})
-                        log info "VM $vm_id - Checksums: ($storedcksum / $streamcksum)"
                         if [ "$storedcksum" == "$streamcksum" ]; then
-                            log info "VM $vm_id - Checksum match: $streamcksum ($storedcksum / $streamcksum)"
+                            log info "VM $vm_id - Checksum match: ($storedcksum / $streamcksum)"
                         else
-                            log error "VM $vm_id - Checksum missmatch. Check chain.."
+                            log error "VM $vm_id - Checksum missmatch. Check chain. ($storedcksum / $streamcksum)"
                             exit 1
                         fi
+                        bytecount=$((bytecount+$(sum_size_file "$path_backup/$backup")))
                     fi
                     ;;
             esac
@@ -1126,12 +1129,13 @@ function restore(){
         log info "Consider to manually create VM/CT and change config file from backup adapting restored image."    
 
         call_hook_script "restore-job-end" "-" "-"
-
+        endts=$(date +%s)
         log info "End restore $(date "+%F %T")"
-
-        map_vmids_to_host
-
+        local -i runtime=$(expr $endts - $startts)
+        local -i bps=$(expr $bytecount/$runtime)
         
+        log info "$(bytesToHuman "$bytecount") restored in $runtime Seconds. [$(bytesToHuman "$bps")/s]"
+        map_vmids_to_host
 
         log info "Issuing qm-rescan"
         do_run "ssh root@${pvnode[$vm_id]} qm rescan"

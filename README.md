@@ -133,6 +133,52 @@ dpkg -i eve4pve-barc_?.?.?-?_all.deb
 
 This tool need basically no configuration.
 
+## Things to check
+
+- From Proxmox VE Hosts you want to backup you need to be able to ssh passwordless to all other Cluster hosts, that may hold VM's or Containers. This is required for using the free/unfreeze function which has to be called locally from that Host the guest is currently running on. Usually this works out of the box, but you may want to make sure that you can "ssh root@pvehost1...n" from every host to every other host in the cluster.
+
+## Retention mode
+
+eve4barc currently supports two retention modes: --keep and --renew. 
+
+- In --keep mode one initial full Backup is made and subsequent incremeltal Backups are collected. Once the keep Value is exceeded, the oldest incremental file is merged with the second oldest. For Example with --keep=4 this would look like:
+
+
+```ditaa {cmd=true args=["-E"]}
++---------+     +----------+     +----------+     +----------+     +----------+
+|Basecopy |     | diff0    |     | diff1    |     | diff2    |     | diff3    |
+|         |---->|          |---->|          |---->|          |---->|          |
++---------+     +----------+     +----------+     +----------+     +----------+
+                             Merge      |
+                        +---------------+
+                        |
+                        V
++---------+     +----------+     +----------+     +----------+     +----------+
+|Basecopy |     | diff0+1  |     | diff2    |     | diff3    |     | diff4    |
+|         |---->|          |---->|          |---->|          |---->|          |
++---------+     +----------+     +----------+     +----------+     +----------+
+                             Merge      |
+                        +---------------+
+                        |
+                        V
++---------+     +----------+     +----------+     +----------+     +----------+
+|Basecopy |     | diff0+1+2|     | diff3    |     | diff4    |     | diff5    |
+|         |---->|          |---->|          |---->|          |---->|          |
++---------+     +----------+     +----------+     +----------+     +----------+
+```
+
+This goes forever, the Basecopy is never refreshed and the first diff will grow over time.
+
+- In --renew mode, one full Backup is made in regular Intervals, no merging happens. For Example with --renew=3 this would look like: 
+
+```ditaa {cmd=true args=["-E"]}
++---------+   +-----+   +-----+   +-----+   +---------+   +-----+   +-----+   +-----+
+|Basecopy0|   |diff0|   |diff1|   |diff2|   |Basecopy1|   |diff0|   |diff1|   |diff2|
+|         |-->|     |-->|     |-->|     |-->|         |-->|     |-->|     |-->|     |
++---------+   +-----+   +-----+   +-----+   +---------+   +-----+   +-----+   +-----+
+
+```
+
 ## Backup a VM/CT one time
 
 ```sh
