@@ -20,7 +20,7 @@ Ceph Documentation
 /_____/_/ /_/\__/\___/_/  / .___/_/  /_/____/\___/     |___/_____/
                          /_/
 
-EnterpriseVE Backup And Restore Ceph for Proxmox VE  (Made in Italy)
+EnterpriseVE Backup And Restore Ceph for Proxmox VE  (Made in Europe)
 
 Usage:
     eve4pve-barc <COMMAND> [ARGS] [OPTIONS]
@@ -223,25 +223,53 @@ root@pve1:~# eve4pve-barc enable --vmid=111 --label='daily'
 Show status backup in directory destination.
 
 ```sh
-root@pve1:~# eve4pve-barc status --vmid=111,112 --label='daily' --path=/mnt/bckceph
 
-VM  TYPE SIZE   BACKUP            IMAGE
-111 img    4.8G 17-02-08 11:08:21 pool-rbd.vm-111-disk-1
-111 diff   9.3M 17-02-08 17:22:54 pool-rbd.vm-111-disk-1
-111 diff   4.5K 17-02-08 17:26:42 pool-rbd.vm-111-disk-1
-111 diff   4.5K 17-02-08 17:27:33 pool-rbd.vm-111-disk-1
-111 img     512 17-02-08 11:08:21 pool-rbd.vm-111-disk-2
-111 diff   4.5K 17-02-08 17:22:54 pool-rbd.vm-111-disk-2
-111 diff   4.5K 17-02-08 17:26:42 pool-rbd.vm-111-disk-2
-111 diff   4.5K 17-02-08 17:27:33 pool-rbd.vm-111-disk-2
-111 img     512 17-02-08 11:08:21 pool-rbd.vm-111-disk-3
-111 diff   4.5K 17-02-08 17:22:54 pool-rbd.vm-111-disk-3
-111 diff   4.5K 17-02-08 17:26:42 pool-rbd.vm-111-disk-3
-111 diff   4.5K 17-02-08 17:27:33 pool-rbd.vm-111-disk-3
-112 img     10G 17-02-08 17:22:54 pool-rbd.vm-112-disk-1
-112 diff   7.4M 17-02-08 17:26:42 pool-rbd.vm-112-disk-1
-112 diff   1.9M 17-02-08 17:27:33 pool-rbd.vm-112-disk-1
+root@pve1:~# /eve4pve-barc status --vmid=102 --label=daily --path=/mnt/bckceph 
+VM   TYPE COMP        SIZE UNCOMP       BACKUP           IMAGE
+102  diff zz     74 Bytes 78 Bytes      20200209151149   vm-102-disk-0 
+                                  sha1: 25737f6ecc6827e1375c995b2350b17c43571446
+102  diff       85.78 MiB 85.78 MiB     20200209150608   vm-102-disk-0 
+                                  sha1: 993ab8c40a8ef59275c5dfc340577bb2a950e2c2
+102  diff      405.00 KiB 405.00 KiB    20200208211801   vm-102-disk-0 
+                                  sha1: 7a77977fbe43c2ab1c4b69d56ea90a594ba62601
+102  img        12.19 GiB 12.19 GiB     20200208211052   vm-102-disk-0 
+                                  sha1: e30f05de912bf497654a94c924d945320b6ffc0c
+
+
 ```
+
+## Remarks about the Directory Layout
+
+This is how a directory where you store your images looks like:
+
+```
+drwxr-xr-x 2 root root           0 Feb  9 16:09 .
+drwxr-xr-x 2 root root           0 Jan 27 19:51 ..
+-rwxr-xr-x 1 root root 13098811392 Feb  8 21:17 20200208211052ceph-vm.vm-102-disk-0.img
+-rwxr-xr-x 1 root root          44 Feb  8 21:17 20200208211052ceph-vm.vm-102-disk-0.img.sha1
+-rwxr-xr-x 1 root root          12 Feb  8 21:17 20200208211052ceph-vm.vm-102-disk-0.img.sha1.size
+-rwxr-xr-x 1 root root         896 Feb  8 21:17 20200208211052.conf
+-rwxr-xr-x 1 root root      414726 Feb  8 21:18 20200208211801ceph-vm.vm-102-disk-0.diff
+-rwxr-xr-x 1 root root          44 Feb  8 21:18 20200208211801ceph-vm.vm-102-disk-0.diff.sha1
+-rwxr-xr-x 1 root root           7 Feb  8 21:18 20200208211801ceph-vm.vm-102-disk-0.diff.sha1.size
+-rwxr-xr-x 1 root root         896 Feb  8 21:18 20200208211801.conf
+-rwxr-xr-x 1 root root    89948246 Feb  9 15:06 20200209150608ceph-vm.vm-102-disk-0.diff
+-rwxr-xr-x 1 root root          44 Feb  9 15:06 20200209150608ceph-vm.vm-102-disk-0.diff.sha1
+-rwxr-xr-x 1 root root           9 Feb  9 15:06 20200209150608ceph-vm.vm-102-disk-0.diff.sha1.size
+-rwxr-xr-x 1 root root         896 Feb  9 15:06 20200209150608.conf
+-rwxr-xr-x 1 root root          74 Feb  9 15:11 20200209151149ceph-vm.vm-102-disk-0.diff.zz
+-rwxr-xr-x 1 root root          44 Feb  9 15:11 20200209151149ceph-vm.vm-102-disk-0.diff.zz.sha1
+-rwxr-xr-x 1 root root           3 Feb  9 15:11 20200209151149ceph-vm.vm-102-disk-0.diff.zz.sha1.size
+-rwxr-xr-x 1 root root         896 Feb  9 15:11 20200209151149.conf
+
+```
+
+*.img/diff files contain your data
+.sha1 (or md5 or whatever you choose) file contains the checksum of the _uncompressed_ data 
+.size file the Size of the uncompressed stream
+.conf files contain the VM Configuration.
+
+#####Be advised: Don't tinker with filenames. All the backupchain logic relies on that.
 
 ## Restore a VM/CT one time
 
@@ -406,3 +434,7 @@ mount -o loop,offset=1048576 assemble-hdd-pool.vm-11-disk-1.assimg /mnt/imgbck/
 
 You can edit the configuration in /etc/cron.d/eve4pve-barc or destroy the job
 and create it new.
+
+## Last remarks
+
+_Test your Backups on a regular Base. Restore them and see if you can mount and/or boot. Snapshots are not meant to be a full replacement for traditional Backups, don't rely on them as the only Source even if it looks very convenient. Follow the n+1 principle and do filebased backups from within your VM's (with Bacula, Borg, rsync, you name it.). If one concept fails for some reason you always have another way to get your Data._
