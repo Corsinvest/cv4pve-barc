@@ -4,7 +4,7 @@
 # Author: Daniele Corsini <daniele.corsini@enterpriseve.com>
 #         Bastian Mäuser <bma@netz.org>        
 
-declare -r VERSION=0.2.1b-renew
+declare -r VERSION=0.2.2-renew
 declare -r NAME=$(basename "$0")
 declare -r PROGNAME=${NAME%.*}
 
@@ -24,16 +24,17 @@ declare -r EXT_CONF='.conf'
 declare -r EXT_FIREWALL='.fw'
 
 declare -r -A -g ckext=( [md5sum]="md5" [sha1sum]="sha1" [sha224sum]="sha224" [sha256sum]="sha256" [sha384sum]="sha384" [sha512sum]="sha512" )
-declare -r -A -g compext=( [none]="" [gzip]=".gz" [bzip2]=".bz2" [pigz]=".gz")
+declare -r -A -g compext=( [none]="" [gzip]=".gz" [bzip2]=".bz2" [pigz]=".zz")
 
 declare opt_vm_ids=''
 declare opt_cksum=true
 declare opt_ckmethod="sha1sum"
 declare opt_compress="none"
-declare opt_compressthreads=1
+declare opt_compressthreads=2
 declare opt_qemu_freeze=true
+declare opt_renew #=0
+declare opt_retain
 declare -i opt_keep #=0
-declare -i opt_renew #=0
 declare -i opt_iothreads=10
 declare -i opt_syslog=0
 declare -i opt_debug=0
@@ -58,8 +59,16 @@ declare -i -g snapshotok
 declare -i -g exporttotal
 declare -i -g exportok
 declare -i -g bytecount
+declare -i -g uncompressedbytecount
 declare -g startts
 declare -g endts
+
+
+declare -r renum='^[0-9]+$'
+declare -r retime='([0-9]+)([d,w])$'
+declare -r reimg='^.*\/([0-9]+)([a-zA-Z-]+)\.(.*)\.(diff|img).?(.*)?'
+declare -r redateex='^([0-9]{4})([0-9]{2})([0-9]{2})([0-9]{2})([0-9]{2})([0-9]{2})$'
+
 
 function map_vmids_to_host(){
     for node in $(/usr/bin/pvecm nodes | tail +5 | tr -s ' ' | cut -d' ' -f 4)
@@ -134,12 +143,17 @@ Options:
     --path               Path destination backup
     --keep               Specify the number of backup which should will keep, (default: 1)
     --renew              Specify how many diffs may accumulate, until a full Backup is issued
+                         --renew=10 for keeping 10 Diffs until making a new full export
+                         --renew=7d for making diffs up to 7 days, until making a new full export
+    --retain             Specify how many Backups should be kept, timewise (default: infinite - if unset, nothing is ever deleted)
+                         --retain=30d to keep Backups for 30 days. If the Point in time matches a diff, 
+                         it keeps all previous diffs up to the preceding full image to ensure possibility to restore data
     --cksum              Store checksums for snapshot validation (default: true)
     --ckmethod           Method used for Checksumming [m5sum, sha1sum, sha224sum, sha384sum, sha512sum] (default: sha1sum)
     --qemu-freeze        Issue fsfreeze-freeze prio snapshotting and fsfreeze-thaw after snapshot completion (default: true)
     --iothreads          Specify number of IO threads for exporting (default: 10)
     --compress           Specify compression method [none,gzip,bzip2,pigz] (default: none)
-    --compressthreads    Specify compression threads for pigz (default: 1)
+    --compressthreads    Specify compression threads for pigz (default: 2)
     --script             Use specified hook script
                          E.g. /usr/share/doc/$PROGNAME/examples/script-hook.sh
     --syslog             Write messages into the system log
@@ -219,7 +233,7 @@ function parse_opts(){
     local args
     args=$(getopt \
            --options '' \
-           --longoptions=path:,vmid:,label:,keep:,renew:,cksum:,ckmethod:,iothreads:,compress:,compressthreads:,mail: \
+           --longoptions=path:,vmid:,label:,keep:,renew:,retain:,cksum:,ckmethod:,iothreads:,compress:,compressthreads:,mail: \
            --longoptions=script:,syslog,debug,dry-run,unprotect-snap,qemu-freeze \
            --name "$PROGNAME" \
            -- "$@") \
@@ -232,7 +246,8 @@ function parse_opts(){
         --vmid) opt_vm_ids=$2; shift 2;;
         --label) opt_label="$2"; shift 2;;
         --keep) opt_keep=$2; shift 2;;
-        --renew) opt_renew=$2; shift 2;;
+        --renew) opt_renew="$2"; shift 2;;
+        --retain) opt_retain="$2"; shift 2;;
         --cksum) opt_cksum=$2; shift 2;;
         --ckmethod) opt_ckmethod=$2; shift 2;;
         --iothreads) opt_iothreads=$2; shift 2;;
@@ -602,6 +617,7 @@ function backup(){
         local image_spec
         local current_snap
         local backup_file
+        local backup_file_present
         local latest_snap
         local compress
 
@@ -633,11 +649,10 @@ function backup(){
             #obey renew policy
             local diffcount=0
             local renew=false
-            if [[ "$opt_renew" -gt 0 ]]; then
-                #regex='^.*\.(.*)$'
-                regex='^.*\/([0-9]+)([a-zA-Z-]+)\.(.*)\.(diff|img).?(.*)?'
-                for backup_files_present in $(ls -r $path_backup/*$suffix_backup_file{$EXT_DIFF,$EXT_IMAGE}{.gz,.bz2,} 2>/dev/null); do
-                    if [[ "$backup_files_present" =~ $regex ]]; then
+            #count mode (accumulate diff's until they exceed a given number --renew=X)
+            if [[ $opt_renew =~ $renum ]] && [[ "$opt_renew" -gt 0 ]]; then 
+                for backup_files_present in $(ls -r $path_backup/*$suffix_backup_file{$EXT_DIFF,$EXT_IMAGE}{.zz,.gz,.bz2,} 2>/dev/null); do
+                    if [[ "$backup_files_present" =~ $reimg ]]; then
                         ext=${BASH_REMATCH[4]}
                         if [ "$ext" == 'diff' ]; then
                             diffcount=$((diffcount+1))
@@ -651,8 +666,35 @@ function backup(){
                         break;
                     fi
                 done
+            #time mode (accumulate diff's until given time has passed --renew=Xd)
+            elif [[ $opt_renew =~ $retime ]]; then
+                local factor=86400    #tbd: support d, w, m
+                maxage=$((${BASH_REMATCH[1]}*$factor))
+                for backup_files_present in $(ls -r $path_backup/*$suffix_backup_file{$EXT_DIFF,$EXT_IMAGE}{.zz,.gz,.bz2,} 2>/dev/null); do
+                    if [[ "$backup_files_present" =~ $reimg ]]; then
+                        ext=${BASH_REMATCH[4]}
+                        ts=${BASH_REMATCH[1]}
+                        if [[ $ts =~ $redateex ]]; then
+                            fdate=$((`date --date "${BASH_REMATCH[1]}/${BASH_REMATCH[2]}/${BASH_REMATCH[3]} ${BASH_REMATCH[4]}:${BASH_REMATCH[5]}:${BASH_REMATCH[6]}" +%s`))
+                        else
+                            rc=70
+                            break;
+                        fi
+                        age=$((`date +"%s"`-$fdate))
+                        echo "TS: $ts $ext $fdate $age $backup_files_present"
+                        if [ "$ext" == 'img' ]; then
+                            echo "Full found, age ($age), maxage ($maxage)"
+                            if [[ $age -ge $maxage ]]; then
+                                echo "Age of most recent full exceeds maxage"
+                                renew=true
+                                break;
+                            fi
+                            break;
+                        fi
+                    fi
+                done
             fi
-            #exit
+
             #check exist initial export
             if ! exist_file "$path_backup/*$suffix_backup_file$EXT_IMAGE*"; then
                 #initial export not exist            
@@ -770,7 +812,7 @@ function backup(){
 
                 log info "VM $vm_id - Export initial '$backup_file'"
                 if [ "$opt_cksum" == true ]; then
-                    excmd="rbd export --rbd-concurrent-management-ops $opt_iothreads $current_snap - | tee >($compress > '$backup_file') | $opt_ckmethod > $backup_file.${ckext[$opt_ckmethod]}"
+                    excmd="rbd export --rbd-concurrent-management-ops $opt_iothreads $current_snap - | tee >($compress > '$backup_file') | tee >({ wc -c; } > $backup_file.${ckext[$opt_ckmethod]}.size) | $opt_ckmethod > $backup_file.${ckext[$opt_ckmethod]}"
                 else 
                     excmd="rbd export --rbd-concurrent-management-ops $opt_iothreads $current_snap '$backup_file'"
                 fi
@@ -785,8 +827,8 @@ function backup(){
 
                     break;
                 fi
-                log info "VM $vm_id - Size $(get_size_file "$backup_file")"
-                exportok=$((exportok+1))
+#                log info "VM $vm_id - Size $(bytesToHuman "$(get_size_file "$backup_file")") Uncompressed: $(bytesToHuman "$(<$backup_file.${ckext[$opt_ckmethod]}.size)")"
+#                exportok=$((exportok+1))
 
                 call_hook_script "export-post" "$current_snap" "$backup_file"
 
@@ -800,11 +842,11 @@ function backup(){
                 call_hook_script "export-diff-pre" "$current_snap" "$backup_file"
                 log info "VM $vm_id - Export diff '$backup_file'"
                 if [ "$opt_cksum" == true ]; then
-                    excmd="rbd export-diff --from-snap $latest_snap $current_snap - | tee >($compress > '$backup_file') | $opt_ckmethod > $backup_file.${ckext[$opt_ckmethod]}"
+                    excmd="rbd export-diff --from-snap $latest_snap $current_snap - | tee >($compress > '$backup_file') | tee >({ wc -c; } > $backup_file.${ckext[$opt_ckmethod]}.size) | $opt_ckmethod > $backup_file.${ckext[$opt_ckmethod]}"
                 else
                     excmd="rbd export-diff --from-snap $latest_snap $current_snap '$backup_file'"
                 fi
-                log info "VM $vmid - excmd: $excmd"
+                log info "VM $vm_id - excmd: $excmd"
                 if ! do_run "$excmd"; then
                     remove_snaphot "$current_snap" 0
 
@@ -815,15 +857,18 @@ function backup(){
                     
                     break;
                 fi
-                log info "VM $vm_id - Size $(get_size_file "$backup_file")" 
-                exportok=$((exportok+1))
+#                log info "VM $vm_id - Size $(bytesToHuman "$(get_size_file "$backup_file")") Uncompressed: $(bytesToHuman "$(<$backup_file.${ckext[$opt_ckmethod]}.size)")" 
+#                exportok=$((exportok+1))
 
                 call_hook_script "export-diff-post" "$current_snap" "$backup_file"
 
                 #remove previous snapshot
                 remove_snaphot "$image_spec@$latest_snap" 1
             fi
+            exportok=$((exportok+1))
+            log info "VM $vm_id - Size $(bytesToHuman "$(get_size_file "$backup_file")") Uncompressed: $(bytesToHuman "$(<$backup_file.${ckext[$opt_ckmethod]}.size)") Compressionratio 1:$(($(<$backup_file.${ckext[$opt_ckmethod]}.size)/$(get_size_file "$backup_file")))" 
             bytecount=$((bytecount+$(sum_size_file "$backup_file")))
+            uncompressedbytecount=$((uncompressedbytecount+$(<$backup_file.${ckext[$opt_ckmethod]}.size)))
         done
 
         #copy config files
@@ -839,10 +884,17 @@ function backup(){
         vmok=$((vmok+1))
 
         # If no renew policy is set, do the merge magic
-        if [[ ! "$opt_renew" -gt 0 ]]; then
+        if [[ "$opt_renew" == "" ]]; then
             log info "VM $vm_id - -------- Merge diff file --------"
             merge_diff_backup
         fi
+
+        # If renew policy is set, do some housekeeping
+        if ! [[ "$opt_renew" == "" ]] && [[ $opt_retain =~ $retime ]]; then
+            log info "VM $vm_id - -------- Housekeeping --------"
+            housekeeping
+        fi
+
     done
 
     vm_id=0
@@ -858,13 +910,47 @@ function backup(){
 }
 
 function get_size_file(){
-    echo $(ls -lh "$1" | awk '{print $5}')
+    echo $(ls -l "$1" | awk '{print $5}')
 }
 
 function sum_size_file(){
     echo $((sumbytes+$(ls -l "$1" | awk '{print $5}')))
 }
 
+function housekeeping() {
+    local image=''
+    local keepfile=true
+    local imgreached=false
+    local factor=86400 #tbd
+    [[ $opt_retain =~ $retime ]]
+    maxage=$((${BASH_REMATCH[1]}*$factor))
+    for image in $(ls -r $path_backup/*{$EXT_DIFF,$EXT_IMAGE}{.zz,.gz,.bz2,} 2>/dev/null); do
+        if [[ "$image" =~ $reimg ]]; then
+            ext=${BASH_REMATCH[4]}
+            ts=${BASH_REMATCH[1]}
+            if [[ $ts =~ $redateex ]]; then
+                fdate=$((`date --date "${BASH_REMATCH[1]}/${BASH_REMATCH[2]}/${BASH_REMATCH[3]} ${BASH_REMATCH[4]}:${BASH_REMATCH[5]}:${BASH_REMATCH[6]}" +%s`))
+            else
+                rc=10
+                log error "Houskeeping Error"
+                break;
+            fi
+            age=$((`date +"%s"`-$fdate))
+            if [[ $age -ge $maxage ]]; then
+                if [[ ".$ext" == "$EXT_IMAGE" ]]; then
+                    imgreached=true
+                fi
+            fi
+            if ! [[ "$keepfile" == true ]]; then
+                log info "VM $vm_id - Houskeeping deleting: $image"
+                do_run "unlink $image"
+            fi
+            if [[ "$imgreached" == true ]]; then 
+                keepfile=false
+            fi
+        fi
+    done
+}
 
 function merge_diff_backup(){
     #loop all image
@@ -993,7 +1079,7 @@ function restore(){
         
         local title="EnterpriseVE BARC | Restore image"
 
-        images=($(ls -r "$path_backup/"*{$EXT_IMAGE,$EXT_DIFF}{,.gz,.bz2} 2>/dev/null|xargs -n1 basename|awk '{ printf "%s %s\n", $0, $0}'))
+        images=($(ls -r "$path_backup/"*{$EXT_IMAGE,$EXT_DIFF}{,.gz,.zz,.bz2} 2>/dev/null|xargs -n1 basename|awk '{ printf "%s %s\n", $0, $0}'))
 
         #select image to recovery
         local image;
@@ -1035,7 +1121,7 @@ function restore(){
 
         call_hook_script "restore-job-start" "-" "-"
 
-        log info "Start restore $(date "+%F %T")"
+        log info "Start restore $(date "+%F %T") $image"
         
         startts=$(date +%s)
 
@@ -1045,7 +1131,7 @@ function restore(){
         searchdisk=${BASH_REMATCH[3]}
         local inchain=false
         local -a plan
-        for backup_files in $(ls -r "$path_backup/"*{$EXT_IMAGE,$EXT_DIFF}{,.gz,.bz2} 2>/dev/null|xargs -n1 basename); do
+        for backup_files in $(ls -r "$path_backup/"*{$EXT_IMAGE,$EXT_DIFF}{,.gz,.zz,.bz2} 2>/dev/null|xargs -n1 basename); do
             if [ "$backup_files" == "$image" ]; then
                 inchain=true
             fi
@@ -1061,7 +1147,6 @@ function restore(){
                 fi
             fi
         done
-
         #Execute actionplan
         local backup=''
         for backup in "${plan[@]}"; do
@@ -1077,8 +1162,8 @@ function restore(){
                 "bz2" )
                     compress="bzip2 -d"
                     ;;
-                "pgz" )
-                    compress="pigz -d -p $opt_compressthreads"
+                "zz" )
+                    compress="pigz -dc -p $opt_compressthreads"
                     ;;
                 "" )
                     compress="cat"
@@ -1089,6 +1174,7 @@ function restore(){
                 "$EXT_IMAGE" )
                     log info "Initial import $backup" 
                     cmd="$compress '$path_backup/$backup'| tee >(rbd import --no-progress --image-format 2 - $pool_name/$name_import) | $opt_ckmethod"
+                    log info "VM $vm_id - importcmd: $cmd"
                     streamcksum=$(eval "$cmd")
                     if [ -e "$path_backup/$backup.${ckext[$opt_ckmethod]}" ]; then
                         storedcksum=$(<$path_backup/$backup.${ckext[$opt_ckmethod]})
@@ -1099,6 +1185,7 @@ function restore(){
                             exit 1
                         fi
                         bytecount=$((bytecount+$(sum_size_file "$path_backup/$backup")))
+                        uncompressedbytecount=$((uncompressedbytecount+$(< $path_backup/$backup.${ckext[$opt_ckmethod]}.size)))
                     fi
                     local snap_name_restore="$snap_name_prefix$timestamp_snap"
                     do_run "rbd snap create $pool_name/$name_import@$snap_name_restore"
@@ -1106,6 +1193,7 @@ function restore(){
                 "$EXT_DIFF" )
                     log info "Differential $backup"
                     cmd="$compress '$path_backup/$backup' | tee >(rbd import-diff --no-progress - $pool_name/$name_import) | $opt_ckmethod "
+                    log info "VM $vm_id - importcmd: $cmd"
                     streamcksum=$(eval "$cmd")
                     if [ -e "$path_backup/$backup.${ckext[$opt_ckmethod]}" ]; then
                         storedcksum=$(<$path_backup/$backup.${ckext[$opt_ckmethod]})
@@ -1116,6 +1204,7 @@ function restore(){
                             exit 1
                         fi
                         bytecount=$((bytecount+$(sum_size_file "$path_backup/$backup")))
+                        uncompressedbytecount=$((uncompressedbytecount+$(< $path_backup/$backup.${ckext[$opt_ckmethod]}.size)))
                     fi
                     ;;
             esac
@@ -1132,9 +1221,9 @@ function restore(){
         endts=$(date +%s)
         log info "End restore $(date "+%F %T")"
         local -i runtime=$(expr $endts - $startts)
-        local -i bps=$(expr $bytecount/$runtime)
+        local -i bps=$(expr $uncompressedbytecount/$runtime)
         
-        log info "$(bytesToHuman "$bytecount") restored in $runtime Seconds. [$(bytesToHuman "$bps")/s]"
+        log info "$(bytesToHuman "$uncompressedbytecount") restored in $runtime Seconds. [$(bytesToHuman "$bps")/s] [Compressed Size $(bytesToHuman "$bytecount")]"
         map_vmids_to_host
 
         log info "Issuing qm-rescan"

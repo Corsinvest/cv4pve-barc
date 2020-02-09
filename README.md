@@ -66,6 +66,11 @@ Options:
     --path               Path destination backup
     --keep               Specify the number of backup which should will keep, Default 1 (can't be used with --renew)
     --renew              Specify how many diffs may accumulate, until a full Backup is issued
+                         --renew=10 for keeping 10 Diffs until making a new full export
+                         --renew=7d for making diffs up to 7 days, until making a new full export
+    --retain             Specify how many Backups should be kept, timewise (default: infinite - if unset, nothing is ever deleted)
+                         --retain=30d to keep Backups for 30 days. If the Point in time matches a diff, 
+                         it keeps all previous diffs up to the preceding full image to ensure possibility to restore data
     --cksum              Store checksums for snapshot validation (default: true)
     --qemu-freeze        Issue fsfreeze-freeze prio snapshotting and fsfreeze-thaw after snapshot completion (default: true)
     --iothreads          Specify number of IO threads for exporting (default: 10)
