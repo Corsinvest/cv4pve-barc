@@ -4,7 +4,7 @@
 # Author: Daniele Corsini <daniele.corsini@enterpriseve.com>
 #         Bastian Mäuser <bma@netz.org>        
 
-declare -r VERSION=0.2.2-renew
+declare -r VERSION=0.2.3-renew
 declare -r NAME=$(basename "$0")
 declare -r PROGNAME=${NAME%.*}
 
@@ -1240,31 +1240,43 @@ function status(){
 
     for vm_id in $vm_ids; do
         get_path
-
         local image=''
         for image in $path_backup/*$EXT_IMAGE; do
             [ ! -e "$image" ] && continue
-
             image=$(basename "$image")
-            image=${image:14:${#image}-14-4}
-
             local backup=''
-            for backup in $path_backup/*$image*{$EXT_DIFF,$EXT_IMAGE}; do
+            local ckregex='^.*.(md5|sha1|sha224|sha384|sha512)$'
+            local regex='^.*\/([0-9]+)([a-zA-Z-]+)\.(.*)\.(diff|img).?(.*)?'
+            for backup in $(ls -r "$path_backup/"*{$EXT_IMAGE,$EXT_DIFF}{,.gz,.zz,.bz2} 2>/dev/null); do
+                [[ "$backup" =~ $regex ]]
+                local ext; ext=${BASH_REMATCH[4]}
+                local cext; cext=${BASH_REMATCH[5]}
+                local image; image=${BASH_REMATCH[3]}
+                local ts=${BASH_REMATCH[1]}
                 if [ $print_header -eq 1 ]; then
                     print_header=0
-                    echo "VM  TYPE SIZE  BACKUP            IMAGE"
+                    echo "VM   TYPE COMP        SIZE UNCOMP       BACKUP           IMAGE"
                 fi
-
-                local filename; filename=$(basename "$backup")
-                local extension=${filename##*.}
-
-                printf "%-3s %-4s %5s %-6s %-6s %s \n" \
+                local ckformat=($(ls $backup.{md5,sha1} 2>/dev/null ))
+                if [[ "$ckformat" =~ $ckregex ]]; then
+                    ckformat=${BASH_REMATCH[1]}
+                    local uncompressed=$(<"$backup.$ckformat.size")
+                    if [[ "$ckformat" != "" ]]; then
+                        local cksum=$(<"$backup.$ckformat")
+                        cksum=$(echo $cksum|cut -d' ' -f 1)
+                    fi
+                fi
+                printf "%-4s %-4s %-4s %10s %-12s %15s %15s \n" \
                        "$vm_id" \
-                       "$extension" \
-                       "$(get_size_file "$backup")" \
-                       "${filename:0:2}-${filename:2:2}-${filename:4:2}" \
-                       "${filename:6:2}:${filename:8:2}:${filename:10:2}" \
-                       "${filename:14:${#filename}-15-${#extension}}"
+                       "$ext" \
+                       "$cext" \
+                       "$(bytesToHuman "$(get_size_file "$backup")")" \
+                       "$(bytesToHuman "$uncompressed")" \
+                       "$ts" \
+                       "$image" 
+                if  [[ "$ckformat" != "" ]]; then
+                    echo "                                  $ckformat: $cksum"
+                fi
             done
         done
     done
