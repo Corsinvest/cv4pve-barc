@@ -802,7 +802,7 @@ function backup(){
                     compress="bzip2"
                     ;;
                 "pigz" )
-                    compress="pigz -p $opt_compressthreads"
+                    compress="pigz -3 -p $opt_compressthreads"
                     ;;
             esac
 
