@@ -325,13 +325,13 @@ This command backup VM/CT 111. The --renew tells that it you want to have a new 
 ## Create a recurring backup job
 
 ```sh
-root@pve1:~# eve4pve-barc create --vmid=111 --label='daily' --path=/mnt/bckceph -renew=7d --retain=30d
+root@pve1:~# eve4pve-barc create --vmid=111 --label='daily' --path=/mnt/bckceph --renew=7d --retain=30d
 ```
 
 ## Delete a recurring backup job
 
 ```sh
-root@pve1:~# eve4pve-barc destroy --vmid=111 --label='daily' --path=/mnt/bckceph -renew=7d --retain=30d
+root@pve1:~# eve4pve-barc destroy --vmid=111 --label='daily' --path=/mnt/bckceph --renew=7d --retain=30d
 ```
 
 ## Pause a backup job
