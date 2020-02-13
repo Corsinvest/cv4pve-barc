@@ -380,8 +380,14 @@ EOL
                 (*monthly*) cron_scheduling="0 0 1 * *";; #Run once a month at midnight of the first day of the month
             esac
 
-            local job="$cron_scheduling root $PROGNAME $job_key_cron --keep=$opt_keep"
+            local job="$cron_scheduling root $PROGNAME $job_key_cron"
 
+            [ ! -z "$opt_keep" ] && job="$job --keep=$opt_keep"
+            [ ! -z "$opt_renew" ] && job="$job --renew=$opt_renew"
+            [ ! -z "$opt_retain" ] && job="$job --retain=$opt_retain"
+            [ ! -z "$opt_compress" ] && job="$job --compress=$opt_compress"
+            [ ! -z "$opt_compressthreads" ] && job="$job --compressthreads=$opt_compressthreads"
+            [ ! -z "$opt_iothreads" ] && job="$job --iothreads=$opt_iothreads"
             [ -e "$opt_script" ] && job="$job --script='$opt_script'"
             [ $opt_unprotect_snap -eq 1 ] && job="$job --unprotect-snap"
             [ $opt_syslog -eq 1 ] && job="$job --syslog"     
