@@ -20,7 +20,7 @@ Ceph Documentation
 /_____/_/ /_/\__/\___/_/  / .___/_/  /_/____/\___/     |___/_____/
                          /_/
 
-EnterpriseVE Backup And Restore Ceph for Proxmox VE  (Made in Italy)
+EnterpriseVE Backup And Restore Ceph for Proxmox VE  (Made in Europe)
 
 Usage:
     eve4pve-barc <COMMAND> [ARGS] [OPTIONS]
@@ -184,26 +184,154 @@ This goes forever, the Basecopy is never refreshed and the first diff will grow 
 
 ```
 
+## Some words about Snapshot consistency and what qemu-guest-agent can do for you
+
+Bear in mind, that when taking a snapshot of a running VM, it's basically like if you have a server which gets pulled away from the Power. Often this is not cathastrophic as the next fsck will try to fix Filesystem Issues, but in the worst case this could leave you with a severely damaged Filesystem, or even worse, half written Inodes which were in-flight when the power failed lead to silent data corruption. To overcome these things, we have the qemu-guest-agent to improve the consistency of the Filesystem while taking a snapshot. It won't leave you a clean filesystem, but it sync()'s outstanding writes and halts all i/o until the snapshot is complete. Still, there might me issues on the Application layer. Databases processes might have unwritten data in memory, which is the most common case. Here you have the opportunity to do additional tuning, and use hooks to tell your vital processes things to do prio and post freezes.
+
+First, you want to make sure that your guest has the qemu-guest-agent running and is working properly. Now we use custom hooks to tell your services with volatile data, to flush all unwritten data to disk. On debian based linux systems the hook file can be set in ```/etc/default/qemu-guest-agent``` and could simply contain this line:
+
+```
+DAEMON_ARGS="-F/etc/qemu/fsfreeze-hook"
+```
+
+Create ```/etc/qemu/fsfreeze-hook``` and make ist look like:
+
+```
+#!/bin/sh
+
+# This script is executed when a guest agent receives fsfreeze-freeze and
+# fsfreeze-thaw command, if it is specified in --fsfreeze-hook (-F)
+# option of qemu-ga or placed in default path (/etc/qemu/fsfreeze-hook).
+# When the agent receives fsfreeze-freeze request, this script is issued with
+# "freeze" argument before the filesystem is frozen. And for fsfreeze-thaw
+# request, it is issued with "thaw" argument after filesystem is thawed.
+
+LOGFILE=/var/log/qga-fsfreeze-hook.log
+FSFREEZE_D=$(dirname -- "$0")/fsfreeze-hook.d
+
+# Check whether file $1 is a backup or rpm-generated file and should be ignored
+is_ignored_file() {
+    case "$1" in
+        *~ | *.bak | *.orig | *.rpmnew | *.rpmorig | *.rpmsave | *.sample | *.dpkg-old | *.dpkg-new | *.dpkg-tmp | *.dpkg-dist | 
+*.dpkg-bak | *.dpkg-backup | *.dpkg-remove)
+            return 0 ;;
+    esac
+    return 1
+}
+
+# Iterate executables in directory "fsfreeze-hook.d" with the specified args
+[ ! -d "$FSFREEZE_D" ] && exit 0
+for file in "$FSFREEZE_D"/* ; do
+    is_ignored_file "$file" && continue
+    [ -x "$file" ] || continue
+    printf "$(date): execute $file $@\n" >>$LOGFILE
+    "$file" "$@" >>$LOGFILE 2>&1
+    STATUS=$?
+    printf "$(date): $file finished with status=$STATUS\n" >>$LOGFILE
+done
+
+exit 0
+```
+
+For testing purposes place this into ```/etc/qemu/fsfreeze-hook.d/10-info```:
+
+```
+#!/bin/bash
+dt=$(date +%s)
+
+case "$1" in
+    freeze)
+        echo "frozen on $dt" | tee >(cat >/tmp/fsfreeze)
+    ;;
+    thaw)
+        echo "thawed on $dt" | tee >(cat >>/tmp/fsfreeze)
+    ;;
+esac
+
+```
+
+Now you can place files for different Services in ```/etc/qemu/fsfreeze-hook.d/``` that tell those services what to to prior and post snapshots. A very common example is mysql. Create a file ```/etc/qemu/fsfreeze-hook.d/20-mysql``` containing
+
+```
+#!/bin/sh
+
+# Flush MySQL tables to the disk before the filesystem is frozen.
+# At the same time, this keeps a read lock in order to avoid write accesses
+# from the other clients until the filesystem is thawed.
+
+MYSQL="/usr/bin/mysql"
+#MYSQL_OPTS="-uroot" #"-prootpassword"
+MYSQL_OPTS="--defaults-extra-file=/etc/mysql/debian.cnf"
+FIFO=/var/run/mysql-flush.fifo
+
+# Check mysql is installed and the server running
+[ -x "$MYSQL" ] && "$MYSQL" $MYSQL_OPTS < /dev/null || exit 0
+
+flush_and_wait() {
+    printf "FLUSH TABLES WITH READ LOCK \\G\n"
+    trap 'printf "$(date): $0 is killed\n">&2' HUP INT QUIT ALRM TERM
+    read < $FIFO
+    printf "UNLOCK TABLES \\G\n"
+    rm -f $FIFO
+}
+
+case "$1" in
+    freeze)
+        mkfifo $FIFO || exit 1
+        flush_and_wait | "$MYSQL" $MYSQL_OPTS &
+        # wait until every block is flushed
+        while [ "$(echo 'SHOW STATUS LIKE "Key_blocks_not_flushed"' |\
+                 "$MYSQL" $MYSQL_OPTS | tail -1 | cut -f 2)" -gt 0 ]; do
+            sleep 1
+        done
+        # for InnoDB, wait until every log is flushed
+        INNODB_STATUS=$(mktemp /tmp/mysql-flush.XXXXXX)
+        [ $? -ne 0 ] && exit 2
+        trap "rm -f $INNODB_STATUS; exit 1" HUP INT QUIT ALRM TERM
+        while :; do
+            printf "SHOW ENGINE INNODB STATUS \\G" |\
+                "$MYSQL" $MYSQL_OPTS > $INNODB_STATUS
+            LOG_CURRENT=$(grep 'Log sequence number' $INNODB_STATUS |\
+                          tr -s ' ' | cut -d' ' -f4)
+            LOG_FLUSHED=$(grep 'Log flushed up to' $INNODB_STATUS |\
+                          tr -s ' ' | cut -d' ' -f5)
+            [ "$LOG_CURRENT" = "$LOG_FLUSHED" ] && break
+            sleep 1
+        done
+        rm -f $INNODB_STATUS
+        ;;
+
+    thaw)
+        [ ! -p $FIFO ] && exit 1
+        echo > $FIFO
+        ;;
+
+    *)
+        exit 1
+        ;;
+esac
+
+```
+
+
 ## Backup a VM/CT one time
 
 ```sh
-root@pve1:~# eve4pve-barc backup --vmid=111 --label='daily' --path=/mnt/bckceph --keep=2
+root@pve1:~# eve4pve-barc backup --vmid=111 --label='daily' --path=/mnt/bckceph --renew=7d --retain=30d
 ```
 
-This command backup VM/CT 111. The --keep tells that it should be kept 2 backup, if
-there are more than 2 backup, the 3 one will be erased (sorted by creation
-time).
+This command backup VM/CT 111. The --renew tells that it you want to have a new Full Backup each 7 days and the --retain tell that you want to retain Snapshots for 30 Days.
 
 ## Create a recurring backup job
 
 ```sh
-root@pve1:~# eve4pve-barc create --vmid=111 --label='daily' --path=/mnt/bckceph --keep=5
+root@pve1:~# eve4pve-barc create --vmid=111 --label='daily' --path=/mnt/bckceph --renew=7d --retain=30d
 ```
 
 ## Delete a recurring backup job
 
 ```sh
-root@pve1:~# eve4pve-barc destroy --vmid=111 --label='daily' --path=/mnt/bckceph --keep=5
+root@pve1:~# eve4pve-barc destroy --vmid=111 --label='daily' --path=/mnt/bckceph --renew=7d --retain=30d
 ```
 
 ## Pause a backup job
@@ -223,25 +351,53 @@ root@pve1:~# eve4pve-barc enable --vmid=111 --label='daily'
 Show status backup in directory destination.
 
 ```sh
-root@pve1:~# eve4pve-barc status --vmid=111,112 --label='daily' --path=/mnt/bckceph
 
-VM  TYPE SIZE   BACKUP            IMAGE
-111 img    4.8G 17-02-08 11:08:21 pool-rbd.vm-111-disk-1
-111 diff   9.3M 17-02-08 17:22:54 pool-rbd.vm-111-disk-1
-111 diff   4.5K 17-02-08 17:26:42 pool-rbd.vm-111-disk-1
-111 diff   4.5K 17-02-08 17:27:33 pool-rbd.vm-111-disk-1
-111 img     512 17-02-08 11:08:21 pool-rbd.vm-111-disk-2
-111 diff   4.5K 17-02-08 17:22:54 pool-rbd.vm-111-disk-2
-111 diff   4.5K 17-02-08 17:26:42 pool-rbd.vm-111-disk-2
-111 diff   4.5K 17-02-08 17:27:33 pool-rbd.vm-111-disk-2
-111 img     512 17-02-08 11:08:21 pool-rbd.vm-111-disk-3
-111 diff   4.5K 17-02-08 17:22:54 pool-rbd.vm-111-disk-3
-111 diff   4.5K 17-02-08 17:26:42 pool-rbd.vm-111-disk-3
-111 diff   4.5K 17-02-08 17:27:33 pool-rbd.vm-111-disk-3
-112 img     10G 17-02-08 17:22:54 pool-rbd.vm-112-disk-1
-112 diff   7.4M 17-02-08 17:26:42 pool-rbd.vm-112-disk-1
-112 diff   1.9M 17-02-08 17:27:33 pool-rbd.vm-112-disk-1
+root@pve1:~# /eve4pve-barc status --vmid=102 --label=daily --path=/mnt/bckceph 
+VM   TYPE COMP        SIZE UNCOMP       BACKUP           IMAGE
+102  diff zz     74 Bytes 78 Bytes      20200209151149   vm-102-disk-0 
+                                  sha1: 25737f6ecc6827e1375c995b2350b17c43571446
+102  diff       85.78 MiB 85.78 MiB     20200209150608   vm-102-disk-0 
+                                  sha1: 993ab8c40a8ef59275c5dfc340577bb2a950e2c2
+102  diff      405.00 KiB 405.00 KiB    20200208211801   vm-102-disk-0 
+                                  sha1: 7a77977fbe43c2ab1c4b69d56ea90a594ba62601
+102  img        12.19 GiB 12.19 GiB     20200208211052   vm-102-disk-0 
+                                  sha1: e30f05de912bf497654a94c924d945320b6ffc0c
+
+
 ```
+
+## Remarks about the Directory Layout
+
+This is how a directory where you store your images looks like:
+
+```
+drwxr-xr-x 2 root root           0 Feb  9 16:09 .
+drwxr-xr-x 2 root root           0 Jan 27 19:51 ..
+-rwxr-xr-x 1 root root 13098811392 Feb  8 21:17 20200208211052ceph-vm.vm-102-disk-0.img
+-rwxr-xr-x 1 root root          44 Feb  8 21:17 20200208211052ceph-vm.vm-102-disk-0.img.sha1
+-rwxr-xr-x 1 root root          12 Feb  8 21:17 20200208211052ceph-vm.vm-102-disk-0.img.sha1.size
+-rwxr-xr-x 1 root root         896 Feb  8 21:17 20200208211052.conf
+-rwxr-xr-x 1 root root      414726 Feb  8 21:18 20200208211801ceph-vm.vm-102-disk-0.diff
+-rwxr-xr-x 1 root root          44 Feb  8 21:18 20200208211801ceph-vm.vm-102-disk-0.diff.sha1
+-rwxr-xr-x 1 root root           7 Feb  8 21:18 20200208211801ceph-vm.vm-102-disk-0.diff.sha1.size
+-rwxr-xr-x 1 root root         896 Feb  8 21:18 20200208211801.conf
+-rwxr-xr-x 1 root root    89948246 Feb  9 15:06 20200209150608ceph-vm.vm-102-disk-0.diff
+-rwxr-xr-x 1 root root          44 Feb  9 15:06 20200209150608ceph-vm.vm-102-disk-0.diff.sha1
+-rwxr-xr-x 1 root root           9 Feb  9 15:06 20200209150608ceph-vm.vm-102-disk-0.diff.sha1.size
+-rwxr-xr-x 1 root root         896 Feb  9 15:06 20200209150608.conf
+-rwxr-xr-x 1 root root          74 Feb  9 15:11 20200209151149ceph-vm.vm-102-disk-0.diff.zz
+-rwxr-xr-x 1 root root          44 Feb  9 15:11 20200209151149ceph-vm.vm-102-disk-0.diff.zz.sha1
+-rwxr-xr-x 1 root root           3 Feb  9 15:11 20200209151149ceph-vm.vm-102-disk-0.diff.zz.sha1.size
+-rwxr-xr-x 1 root root         896 Feb  9 15:11 20200209151149.conf
+
+```
+
+*.img/diff files contain your data
+.sha1 (or md5 or whatever you choose) file contains the checksum of the _uncompressed_ data 
+.size file the Size of the uncompressed stream
+.conf files contain the VM Configuration.
+
+#####Be advised: Don't tinker with filenames. All the backupchain logic relies on that.
 
 ## Restore a VM/CT one time
 
@@ -406,3 +562,7 @@ mount -o loop,offset=1048576 assemble-hdd-pool.vm-11-disk-1.assimg /mnt/imgbck/
 
 You can edit the configuration in /etc/cron.d/eve4pve-barc or destroy the job
 and create it new.
+
+## Last remarks
+
+_Test your Backups on a regular Base. Restore them and see if you can mount and/or boot. Snapshots are not meant to be a full replacement for traditional Backups, don't rely on them as the only Source even if it looks very convenient. Follow the n+1 principle and do filebased backups from within your VM's (with Bacula, Borg, rsync, you name it.). If one concept fails for some reason you always have another way to get your Data._
