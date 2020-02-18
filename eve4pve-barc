@@ -699,11 +699,11 @@ function backup(){
                             break;
                         fi
                         age=$((`date +"%s"`-$fdate))
-                        echo "TS: $ts $ext $fdate $age $backup_files_present"
+                        log debug "TS: $ts $ext $fdate $age $backup_files_present"
                         if [ "$ext" == 'img' ]; then
-                            echo "Full found, age ($age), maxage ($maxage)"
+                            log debug "Full found, age ($age), maxage ($maxage)"
                             if [[ $age -ge $maxage ]]; then
-                                echo "Age of most recent full exceeds maxage"
+                                log debug "Age of most recent full exceeds maxage"
                                 renew=true
                                 break;
                             fi
