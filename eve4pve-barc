@@ -185,6 +185,12 @@ function log(){
             echo -e "$message" >> "$LOG_FILE";
             [ $opt_syslog -eq 1 ] && logger -t "$PROGNAME" "$message"
             ;;
+
+        warn)
+            echo "WARNING: $message" 1>&2
+            echo -e "$message" >> "$LOG_FILE";            
+            [ $opt_syslog -eq 1 ] && logger -t "$PROGNAME" -p daemon.warn "$message"
+            ;;
         
         error)
             echo "ERROR: $message" 1>&2
