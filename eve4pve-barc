@@ -714,7 +714,7 @@ function backup(){
             fi
 
             #check exist initial export
-            if [[ $(ls /mnt/pve/backup-home//barc/102/daily/*ceph-vm.vm-102-disk-0$EXT_IMAGE{.zz,.gz,.bz2,} 2>/dev/null|wc -l) == 0 ]]; then 
+            if [[ $(ls $path_backup/*$suffix_backup_file$EXT_IMAGE{.zz,.gz,.bz2,} 2>/dev/null|wc -l) == 0 ]]; then 
                 #initial export not exist            
                 log info "VM $vm_id - No previous backup: issueing full run for $disk" 
                 backup_file="$backup_file$EXT_IMAGE"
