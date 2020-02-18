@@ -835,8 +835,6 @@ function backup(){
 
                     break;
                 fi
-#                log info "VM $vm_id - Size $(bytesToHuman "$(get_size_file "$backup_file")") Uncompressed: $(bytesToHuman "$(<$backup_file.${ckext[$opt_ckmethod]}.size)")"
-#                exportok=$((exportok+1))
 
                 call_hook_script "export-post" "$current_snap" "$backup_file"
 
@@ -865,8 +863,6 @@ function backup(){
                     
                     break;
                 fi
-#                log info "VM $vm_id - Size $(bytesToHuman "$(get_size_file "$backup_file")") Uncompressed: $(bytesToHuman "$(<$backup_file.${ckext[$opt_ckmethod]}.size)")" 
-#                exportok=$((exportok+1))
 
                 call_hook_script "export-diff-post" "$current_snap" "$backup_file"
 
