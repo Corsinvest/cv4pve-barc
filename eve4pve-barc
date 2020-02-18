@@ -897,7 +897,7 @@ function backup(){
         fi
 
         # If renew policy is set, do some housekeeping
-        if ! [[ "$opt_renew" == "" ]] && [[ $opt_retain =~ $retime ]]; then
+        if ! [[ "$opt_renew" == "" ]] && [[ $opt_retain =~ $retime ]] || [[ $opt_retain =~ $renum ]]; then
             log info "VM $vm_id - -------- Housekeeping --------"
             housekeeping
         fi
@@ -929,34 +929,58 @@ function housekeeping() {
     local keepfile=true
     local imgreached=false
     local factor=86400 #tbd
-    [[ $opt_retain =~ $retime ]]
-    maxage=$((${BASH_REMATCH[1]}*$factor))
-    for image in $(ls -r $path_backup/*{$EXT_DIFF,$EXT_IMAGE}{.zz,.gz,.bz2,} 2>/dev/null); do
-        if [[ "$image" =~ $reimg ]]; then
-            ext=${BASH_REMATCH[4]}
-            ts=${BASH_REMATCH[1]}
-            if [[ $ts =~ $redateex ]]; then
-                fdate=$((`date --date "${BASH_REMATCH[1]}/${BASH_REMATCH[2]}/${BASH_REMATCH[3]} ${BASH_REMATCH[4]}:${BASH_REMATCH[5]}:${BASH_REMATCH[6]}" +%s`))
-            else
-                rc=10
-                log error "Houskeeping Error"
-                break;
-            fi
-            age=$((`date +"%s"`-$fdate))
-            if [[ $age -ge $maxage ]]; then
-                if [[ ".$ext" == "$EXT_IMAGE" ]]; then
-                    imgreached=true
+    local filecount=0
+    if [[ $opt_retain =~ $retime ]]; then
+        maxage=$((${BASH_REMATCH[1]}*$factor))
+        for image in $(ls -r $path_backup/*{$EXT_DIFF,$EXT_IMAGE}{.zz,.gz,.bz2,} 2>/dev/null); do
+            if [[ "$image" =~ $reimg ]]; then
+                ext=${BASH_REMATCH[4]}
+                ts=${BASH_REMATCH[1]}
+                if [[ $ts =~ $redateex ]]; then
+                    fdate=$((`date --date "${BASH_REMATCH[1]}/${BASH_REMATCH[2]}/${BASH_REMATCH[3]} ${BASH_REMATCH[4]}:${BASH_REMATCH[5]}:${BASH_REMATCH[6]}" +%s`))
+                else
+                    rc=10
+                    log error "Houskeeping Error"
+                    break;
+                fi
+                age=$((`date +"%s"`-$fdate))
+                if [[ $age -ge $maxage ]]; then
+                    if [[ ".$ext" == "$EXT_IMAGE" ]]; then
+                        imgreached=true
+                    fi
+                fi
+                if ! [[ "$keepfile" == true ]]; then
+                    log info "VM $vm_id - Houskeeping deleting: $image"
+                    do_run "rm $image*"
+                    do_run "rm $path_backup/$ts.conf"
+                fi
+                if [[ "$imgreached" == true ]]; then 
+                    keepfile=false
                 fi
             fi
-            if ! [[ "$keepfile" == true ]]; then
-                log info "VM $vm_id - Houskeeping deleting: $image"
-                do_run "unlink $image"
+        done
+    elif [[ $opt_retain =~ $renum ]]; then
+        for image in $(ls -r $path_backup/*{$EXT_DIFF,$EXT_IMAGE}{.zz,.gz,.bz2,} 2>/dev/null); do
+            if [[ "$image" =~ $reimg ]]; then
+                filecount=$((filecount+1))
+                ext=${BASH_REMATCH[4]}
+                ts=${BASH_REMATCH[1]}
+                if [[ "$filecount" -ge "$opt_retain" ]]; then
+                    if [[ ".$ext" == "$EXT_IMAGE" ]]; then
+                        imgreached=true
+                    fi
+                fi
+                if ! [[ "$keepfile" == true ]]; then
+                    log info "VM $vm_id - Houskeeping deleting: $image"
+                    do_run "rm $image*"
+                    do_run "rm $path_backup/$ts.conf"
+                fi
+                if [[ "$imgreached" == true ]]; then 
+                    keepfile=false
+                fi
             fi
-            if [[ "$imgreached" == true ]]; then 
-                keepfile=false
-            fi
-        fi
-    done
+        done
+    fi
 }
 
 function merge_diff_backup(){
