@@ -662,14 +662,17 @@ function backup(){
             local diffcount=0
             local renew=false
             #count mode (accumulate diff's until they exceed a given number --renew=X)
-            if [[ $opt_renew =~ $renum ]] && [[ "$opt_renew" -gt 0 ]]; then 
+            if [[ $opt_renew =~ $renum ]]; then 
                 for backup_files_present in $(ls -r $path_backup/*$suffix_backup_file{$EXT_DIFF,$EXT_IMAGE}{.zz,.gz,.bz2,} 2>/dev/null); do
                     if [[ "$backup_files_present" =~ $reimg ]]; then
                         ext=${BASH_REMATCH[4]}
                         if [ "$ext" == 'diff' ]; then
                             diffcount=$((diffcount+1))
-                        else
+                        elif [ "$ext" == 'img' ] && [ "$opt_renew" -gt 0 ]; then
                             renew=false
+                            break;
+                        else
+                            renew=true
                             break;
                         fi
                     fi
