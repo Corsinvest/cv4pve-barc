@@ -653,7 +653,7 @@ function backup(){
             backup_file="$path_backup/$timestamp$suffix_backup_file"
 
             #data export
-            export_current_snap[$export_idx]="$current_snap"
+            #export_current_snap[$export_idx]="$current_snap"
             export_image_spec[$export_idx]="$image_spec"
             export_latest_snap[$export_idx]=""
             export_type[$export_idx]=""
@@ -708,7 +708,7 @@ function backup(){
             fi
 
             #check exist initial export
-            if ! exist_file "$path_backup/*$suffix_backup_file$EXT_IMAGE*"; then
+            if [[ $(ls /mnt/pve/backup-home//barc/102/daily/*ceph-vm.vm-102-disk-0$EXT_IMAGE{.zz,.gz,.bz2,} 2>/dev/null|wc -l) == 0 ]]; then 
                 #initial export not exist            
                 log info "VM $vm_id - No previous backup: issueing full run for $disk" 
                 backup_file="$backup_file$EXT_IMAGE"
@@ -748,28 +748,23 @@ function backup(){
                                   awk -v prf="$snap_name_prefix" '{print substr($1,length(prf)+1)}')
 
                 if ! exist_file "$path_backup/$tms_latest_snap$suffix_backup_file.*"; then
-                    log error "VM $vm_id - Ceph snapshot '$image_spec@$latest_snap' not found in backup '$path_backup/$tms_latest_snap$suffix_backup_file.*'";                    
-                    call_hook_script "export-diff-abort" "-" "-"  
-                    rc=40                         
-                    break;
+                    log warn "VM $vm_id - Ceph snapshot '$image_spec@$latest_snap' not found in backup '$path_backup/$tms_latest_snap$suffix_backup_file.*'"
+                    log info "VM $vm_id - Issuing full run for $image_spec"
+                    renew=true
                 fi
 
                 #verify exist last backup in ceph snapshot
                 local latest_backup
-                latest_backup=$(ls -r "$path_backup/"*$suffix_backup_file.* | \
-                                head -n 1 | \
-                                xargs -n 1 basename | \
-                                awk '{print substr($1,1,12)}')
-
+                latest_backup=$(ls -r $path_backup/*$suffix_backup_file{$EXT_DIFF,$EXT_IMAGE}{.zz,.gz,.bz2,} 2>/dev/null | \
+                    head -n 1 | xargs -n 1 basename | awk '{print substr($1,1,14)}')
                 latest_backup="$snap_name_prefix$latest_backup"
 
                 if ! rbd snap ls "$image_spec" | awk '{print $2}' | grep -q "$latest_backup"; then
-                    log error "VM $vm_id - Backup '$latest_backup' not found in ceph '$image_spec' snapshot!";                    
-                    call_hook_script "export-diff-abort" "-" "-" 
-                    rc=50                        
-                    break;
+                    log warn "VM $vm_id - Backup '$latest_backup' not found in ceph '$image_spec' snapshot!";                    
+                    log info "VM $vm_id - Issuing full run for $image_spec"
+                    renew=true
                 fi
-                
+
                 if ! create_snapshot "$current_snap"; then
                     [[ "$opt_qemu_freeze" == true ]] && vm_unfreeze "$vm_id" "${pvnode[$vm_id]}"
                     rc=60                        
@@ -785,6 +780,7 @@ function backup(){
             fi
             snapshotok=$((snapshotok+1))             
 
+            export_current_snap[$export_idx]="$current_snap"
             export_backup_file[$export_idx]="$backup_file"
 
             let export_idx++
