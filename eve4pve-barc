@@ -577,6 +577,7 @@ function get_disks_from_config(){
 
 function backup(){
     local -i rc=0;
+    local vmname
 
     parse_opts "$@"
 
@@ -633,7 +634,9 @@ function backup(){
         local latest_snap
         local compress
 
-        log info "VM $vm_id - ======== Start backup VMID $vm_id ========"
+        vmname=`cat $file_config|grep "name\:"|cut -d' ' -f 2`
+
+        log info "VM $vm_id - ======== Start backup VMID $vm_id ($vmname) ========"
         log info "VM $vm_id - -------- Snapshots Disks VMID $vm_id--------"
 
         [[ "$opt_qemu_freeze" == true ]] && vm_freeze "$vm_id" "${pvnode[$vm_id]}"
