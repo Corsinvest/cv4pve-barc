@@ -1255,6 +1255,7 @@ function status(){
             local ext; ext=${BASH_REMATCH[4]}
             local cext; cext=${BASH_REMATCH[5]}
             local image; image=${BASH_REMATCH[3]}
+            local pool=${BASH_REMATCH[2]}
             local ts=${BASH_REMATCH[1]}
             if [ $print_header -eq 1 ]; then
                 print_header=0
@@ -1276,7 +1277,7 @@ function status(){
                     "$(bytesToHuman "$(get_size_file "$backup")")" \
                     "$(bytesToHuman "$uncompressed")" \
                     "$ts" \
-                    "$image" 
+                    "$pool:$image" 
             if  [[ "$ckformat" != "" ]]; then
                 echo "                                  $ckformat: $cksum"
             fi
