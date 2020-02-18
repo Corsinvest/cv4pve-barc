@@ -52,14 +52,14 @@ declare -A vm_ids
 
 
 declare -A -g pvnode
-declare -i -g vmtotal
-declare -i -g vmok
-declare -i -g snapshottotal
-declare -i -g snapshotok
-declare -i -g exporttotal
-declare -i -g exportok
-declare -i -g bytecount
-declare -i -g uncompressedbytecount
+declare -i -g vmtotal=0
+declare -i -g vmok=0
+declare -i -g snapshottotal=0
+declare -i -g snapshotok=0
+declare -i -g exporttotal=0
+declare -i -g exportok=0
+declare -i -g bytecount=0
+declare -i -g uncompressedbytecount=0
 declare -g startts
 declare -g endts
 
