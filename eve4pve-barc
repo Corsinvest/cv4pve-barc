@@ -52,14 +52,14 @@ declare -A vm_ids
 
 
 declare -A -g pvnode
-declare -i -g vmtotal
-declare -i -g vmok
-declare -i -g snapshottotal
-declare -i -g snapshotok
-declare -i -g exporttotal
-declare -i -g exportok
-declare -i -g bytecount
-declare -i -g uncompressedbytecount
+declare -i -g vmtotal=0
+declare -i -g vmok=0
+declare -i -g snapshottotal=0
+declare -i -g snapshotok=0
+declare -i -g exporttotal=0
+declare -i -g exportok=0
+declare -i -g bytecount=0
+declare -i -g uncompressedbytecount=0
 declare -g startts
 declare -g endts
 
@@ -184,6 +184,12 @@ function log(){
             echo -e "$message"; 
             echo -e "$message" >> "$LOG_FILE";
             [ $opt_syslog -eq 1 ] && logger -t "$PROGNAME" "$message"
+            ;;
+
+        warn)
+            echo "WARNING: $message" 1>&2
+            echo -e "$message" >> "$LOG_FILE";            
+            [ $opt_syslog -eq 1 ] && logger -t "$PROGNAME" -p daemon.warn "$message"
             ;;
         
         error)
@@ -571,6 +577,7 @@ function get_disks_from_config(){
 
 function backup(){
     local -i rc=0;
+    local vmname
 
     parse_opts "$@"
 
@@ -627,7 +634,9 @@ function backup(){
         local latest_snap
         local compress
 
-        log info "VM $vm_id - ======== Start backup VMID $vm_id ========"
+        vmname=`cat $file_config|grep "name\:"|cut -d' ' -f 2`
+
+        log info "VM $vm_id - ======== Start backup VMID $vm_id ($vmname) ========"
         log info "VM $vm_id - -------- Snapshots Disks VMID $vm_id--------"
 
         [[ "$opt_qemu_freeze" == true ]] && vm_freeze "$vm_id" "${pvnode[$vm_id]}"
@@ -647,7 +656,7 @@ function backup(){
             backup_file="$path_backup/$timestamp$suffix_backup_file"
 
             #data export
-            export_current_snap[$export_idx]="$current_snap"
+            #export_current_snap[$export_idx]="$current_snap"
             export_image_spec[$export_idx]="$image_spec"
             export_latest_snap[$export_idx]=""
             export_type[$export_idx]=""
@@ -656,14 +665,17 @@ function backup(){
             local diffcount=0
             local renew=false
             #count mode (accumulate diff's until they exceed a given number --renew=X)
-            if [[ $opt_renew =~ $renum ]] && [[ "$opt_renew" -gt 0 ]]; then 
+            if [[ $opt_renew =~ $renum ]]; then 
                 for backup_files_present in $(ls -r $path_backup/*$suffix_backup_file{$EXT_DIFF,$EXT_IMAGE}{.zz,.gz,.bz2,} 2>/dev/null); do
                     if [[ "$backup_files_present" =~ $reimg ]]; then
                         ext=${BASH_REMATCH[4]}
                         if [ "$ext" == 'diff' ]; then
                             diffcount=$((diffcount+1))
-                        else
+                        elif [ "$ext" == 'img' ] && [ "$opt_renew" -gt 0 ]; then
                             renew=false
+                            break;
+                        else
+                            renew=true
                             break;
                         fi
                     fi
@@ -687,11 +699,11 @@ function backup(){
                             break;
                         fi
                         age=$((`date +"%s"`-$fdate))
-                        echo "TS: $ts $ext $fdate $age $backup_files_present"
+                        log debug "TS: $ts $ext $fdate $age $backup_files_present"
                         if [ "$ext" == 'img' ]; then
-                            echo "Full found, age ($age), maxage ($maxage)"
+                            log debug "Full found, age ($age), maxage ($maxage)"
                             if [[ $age -ge $maxage ]]; then
-                                echo "Age of most recent full exceeds maxage"
+                                log debug "Age of most recent full exceeds maxage"
                                 renew=true
                                 break;
                             fi
@@ -702,7 +714,7 @@ function backup(){
             fi
 
             #check exist initial export
-            if ! exist_file "$path_backup/*$suffix_backup_file$EXT_IMAGE*"; then
+            if [[ $(ls $path_backup/*$suffix_backup_file$EXT_IMAGE{.zz,.gz,.bz2,} 2>/dev/null|wc -l) == 0 ]]; then 
                 #initial export not exist            
                 log info "VM $vm_id - No previous backup: issueing full run for $disk" 
                 backup_file="$backup_file$EXT_IMAGE"
@@ -742,28 +754,23 @@ function backup(){
                                   awk -v prf="$snap_name_prefix" '{print substr($1,length(prf)+1)}')
 
                 if ! exist_file "$path_backup/$tms_latest_snap$suffix_backup_file.*"; then
-                    log error "VM $vm_id - Ceph snapshot '$image_spec@$latest_snap' not found in backup '$path_backup/$tms_latest_snap$suffix_backup_file.*'";                    
-                    call_hook_script "export-diff-abort" "-" "-"  
-                    rc=40                         
-                    break;
+                    log warn "VM $vm_id - Ceph snapshot '$image_spec@$latest_snap' not found in backup '$path_backup/$tms_latest_snap$suffix_backup_file.*'"
+                    log info "VM $vm_id - Issuing full run for $image_spec"
+                    renew=true
                 fi
 
                 #verify exist last backup in ceph snapshot
                 local latest_backup
-                latest_backup=$(ls -r "$path_backup/"*$suffix_backup_file.* | \
-                                head -n 1 | \
-                                xargs -n 1 basename | \
-                                awk '{print substr($1,1,12)}')
-
+                latest_backup=$(ls -r $path_backup/*$suffix_backup_file{$EXT_DIFF,$EXT_IMAGE}{.zz,.gz,.bz2,} 2>/dev/null | \
+                    head -n 1 | xargs -n 1 basename | awk '{print substr($1,1,14)}')
                 latest_backup="$snap_name_prefix$latest_backup"
 
                 if ! rbd snap ls "$image_spec" | awk '{print $2}' | grep -q "$latest_backup"; then
-                    log error "VM $vm_id - Backup '$latest_backup' not found in ceph '$image_spec' snapshot!";                    
-                    call_hook_script "export-diff-abort" "-" "-" 
-                    rc=50                        
-                    break;
+                    log warn "VM $vm_id - Backup '$latest_backup' not found in ceph '$image_spec' snapshot!";                    
+                    log info "VM $vm_id - Issuing full run for $image_spec"
+                    renew=true
                 fi
-                
+
                 if ! create_snapshot "$current_snap"; then
                     [[ "$opt_qemu_freeze" == true ]] && vm_unfreeze "$vm_id" "${pvnode[$vm_id]}"
                     rc=60                        
@@ -779,6 +786,7 @@ function backup(){
             fi
             snapshotok=$((snapshotok+1))             
 
+            export_current_snap[$export_idx]="$current_snap"
             export_backup_file[$export_idx]="$backup_file"
 
             let export_idx++
@@ -833,8 +841,6 @@ function backup(){
 
                     break;
                 fi
-#                log info "VM $vm_id - Size $(bytesToHuman "$(get_size_file "$backup_file")") Uncompressed: $(bytesToHuman "$(<$backup_file.${ckext[$opt_ckmethod]}.size)")"
-#                exportok=$((exportok+1))
 
                 call_hook_script "export-post" "$current_snap" "$backup_file"
 
@@ -863,8 +869,6 @@ function backup(){
                     
                     break;
                 fi
-#                log info "VM $vm_id - Size $(bytesToHuman "$(get_size_file "$backup_file")") Uncompressed: $(bytesToHuman "$(<$backup_file.${ckext[$opt_ckmethod]}.size)")" 
-#                exportok=$((exportok+1))
 
                 call_hook_script "export-diff-post" "$current_snap" "$backup_file"
 
@@ -896,7 +900,7 @@ function backup(){
         fi
 
         # If renew policy is set, do some housekeeping
-        if ! [[ "$opt_renew" == "" ]] && [[ $opt_retain =~ $retime ]]; then
+        if ! [[ "$opt_renew" == "" ]] && [[ $opt_retain =~ $retime ]] || [[ $opt_retain =~ $renum ]]; then
             log info "VM $vm_id - -------- Housekeeping --------"
             housekeeping
         fi
@@ -928,34 +932,58 @@ function housekeeping() {
     local keepfile=true
     local imgreached=false
     local factor=86400 #tbd
-    [[ $opt_retain =~ $retime ]]
-    maxage=$((${BASH_REMATCH[1]}*$factor))
-    for image in $(ls -r $path_backup/*{$EXT_DIFF,$EXT_IMAGE}{.zz,.gz,.bz2,} 2>/dev/null); do
-        if [[ "$image" =~ $reimg ]]; then
-            ext=${BASH_REMATCH[4]}
-            ts=${BASH_REMATCH[1]}
-            if [[ $ts =~ $redateex ]]; then
-                fdate=$((`date --date "${BASH_REMATCH[1]}/${BASH_REMATCH[2]}/${BASH_REMATCH[3]} ${BASH_REMATCH[4]}:${BASH_REMATCH[5]}:${BASH_REMATCH[6]}" +%s`))
-            else
-                rc=10
-                log error "Houskeeping Error"
-                break;
-            fi
-            age=$((`date +"%s"`-$fdate))
-            if [[ $age -ge $maxage ]]; then
-                if [[ ".$ext" == "$EXT_IMAGE" ]]; then
-                    imgreached=true
+    local filecount=0
+    if [[ $opt_retain =~ $retime ]]; then
+        maxage=$((${BASH_REMATCH[1]}*$factor))
+        for image in $(ls -r $path_backup/*{$EXT_DIFF,$EXT_IMAGE}{.zz,.gz,.bz2,} 2>/dev/null); do
+            if [[ "$image" =~ $reimg ]]; then
+                ext=${BASH_REMATCH[4]}
+                ts=${BASH_REMATCH[1]}
+                if [[ $ts =~ $redateex ]]; then
+                    fdate=$((`date --date "${BASH_REMATCH[1]}/${BASH_REMATCH[2]}/${BASH_REMATCH[3]} ${BASH_REMATCH[4]}:${BASH_REMATCH[5]}:${BASH_REMATCH[6]}" +%s`))
+                else
+                    rc=10
+                    log error "Houskeeping Error"
+                    break;
+                fi
+                age=$((`date +"%s"`-$fdate))
+                if [[ $age -ge $maxage ]]; then
+                    if [[ ".$ext" == "$EXT_IMAGE" ]]; then
+                        imgreached=true
+                    fi
+                fi
+                if ! [[ "$keepfile" == true ]]; then
+                    log info "VM $vm_id - Houskeeping deleting: $image"
+                    do_run "rm $image*"
+                    do_run "rm $path_backup/$ts.conf"
+                fi
+                if [[ "$imgreached" == true ]]; then 
+                    keepfile=false
                 fi
             fi
-            if ! [[ "$keepfile" == true ]]; then
-                log info "VM $vm_id - Houskeeping deleting: $image"
-                do_run "unlink $image"
+        done
+    elif [[ $opt_retain =~ $renum ]]; then
+        for image in $(ls -r $path_backup/*{$EXT_DIFF,$EXT_IMAGE}{.zz,.gz,.bz2,} 2>/dev/null); do
+            if [[ "$image" =~ $reimg ]]; then
+                filecount=$((filecount+1))
+                ext=${BASH_REMATCH[4]}
+                ts=${BASH_REMATCH[1]}
+                if [[ "$filecount" -ge "$opt_retain" ]]; then
+                    if [[ ".$ext" == "$EXT_IMAGE" ]]; then
+                        imgreached=true
+                    fi
+                fi
+                if ! [[ "$keepfile" == true ]]; then
+                    log info "VM $vm_id - Houskeeping deleting: $image"
+                    do_run "rm $image*"
+                    do_run "rm $path_backup/$ts.conf"
+                fi
+                if [[ "$imgreached" == true ]]; then 
+                    keepfile=false
+                fi
             fi
-            if [[ "$imgreached" == true ]]; then 
-                keepfile=false
-            fi
-        fi
-    done
+        done
+    fi
 }
 
 function merge_diff_backup(){
@@ -1247,43 +1275,40 @@ function status(){
     for vm_id in $vm_ids; do
         get_path
         local image=''
-        for image in $path_backup/*$EXT_IMAGE; do
-            [ ! -e "$image" ] && continue
-            image=$(basename "$image")
-            local backup=''
-            local ckregex='^.*.(md5|sha1|sha224|sha384|sha512)$'
-            local regex='^.*\/([0-9]+)([a-zA-Z-]+)\.(.*)\.(diff|img).?(.*)?'
-            for backup in $(ls -r "$path_backup/"*{$EXT_IMAGE,$EXT_DIFF}{,.gz,.zz,.bz2} 2>/dev/null); do
-                [[ "$backup" =~ $regex ]]
-                local ext; ext=${BASH_REMATCH[4]}
-                local cext; cext=${BASH_REMATCH[5]}
-                local image; image=${BASH_REMATCH[3]}
-                local ts=${BASH_REMATCH[1]}
-                if [ $print_header -eq 1 ]; then
-                    print_header=0
-                    echo "VM   TYPE COMP        SIZE UNCOMP       BACKUP           IMAGE"
+        local backup=''
+        local ckregex='^.*.(md5|sha1|sha224|sha384|sha512)$'
+        local regex='^.*\/([0-9]+)([a-zA-Z-]+)\.(.*)\.(diff|img).?(.*)?'
+        for backup in $(ls -r "$path_backup/"*{$EXT_IMAGE,$EXT_DIFF}{,.gz,.zz,.bz2} 2>/dev/null); do
+            [[ "$backup" =~ $regex ]]
+            local ext; ext=${BASH_REMATCH[4]}
+            local cext; cext=${BASH_REMATCH[5]}
+            local image; image=${BASH_REMATCH[3]}
+            local pool=${BASH_REMATCH[2]}
+            local ts=${BASH_REMATCH[1]}
+            if [ $print_header -eq 1 ]; then
+                print_header=0
+                echo "VM   TYPE COMP        SIZE UNCOMP       BACKUP           IMAGE"
+            fi
+            local ckformat=($(ls $backup.{md5,sha1} 2>/dev/null ))
+            if [[ "$ckformat" =~ $ckregex ]]; then
+                ckformat=${BASH_REMATCH[1]}
+                local uncompressed=$(<"$backup.$ckformat.size")
+                if [[ "$ckformat" != "" ]]; then
+                    local cksum=$(<"$backup.$ckformat")
+                    cksum=$(echo $cksum|cut -d' ' -f 1)
                 fi
-                local ckformat=($(ls $backup.{md5,sha1} 2>/dev/null ))
-                if [[ "$ckformat" =~ $ckregex ]]; then
-                    ckformat=${BASH_REMATCH[1]}
-                    local uncompressed=$(<"$backup.$ckformat.size")
-                    if [[ "$ckformat" != "" ]]; then
-                        local cksum=$(<"$backup.$ckformat")
-                        cksum=$(echo $cksum|cut -d' ' -f 1)
-                    fi
-                fi
-                printf "%-4s %-4s %-4s %10s %-12s %15s %15s \n" \
-                       "$vm_id" \
-                       "$ext" \
-                       "$cext" \
-                       "$(bytesToHuman "$(get_size_file "$backup")")" \
-                       "$(bytesToHuman "$uncompressed")" \
-                       "$ts" \
-                       "$image" 
-                if  [[ "$ckformat" != "" ]]; then
-                    echo "                                  $ckformat: $cksum"
-                fi
-            done
+            fi
+            printf "%-4s %-4s %-4s %10s %-12s %15s %15s \n" \
+                    "$vm_id" \
+                    "$ext" \
+                    "$cext" \
+                    "$(bytesToHuman "$(get_size_file "$backup")")" \
+                    "$(bytesToHuman "$uncompressed")" \
+                    "$ts" \
+                    "$pool:$image" 
+            if  [[ "$ckformat" != "" ]]; then
+                echo "                                  $ckformat: $cksum"
+            fi
         done
     done
 }
