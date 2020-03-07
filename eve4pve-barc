@@ -537,7 +537,6 @@ function call_hook_script(){
     export EVE4PVE_BARC_PATH="$opt_path_backup"
     export EVE4PVE_BARC_LABEL="$opt_label"
     export EVE4PVE_BARC_KEEP=$opt_keep
-    export EVE4PVE_BARC_HOST="$5"
 
     log debug "-------------------------------------------------------" 
     log debug "EVE4PVE_BARC_PHASE:          $EVE4PVE_BARC_PHASE" 
@@ -547,7 +546,6 @@ function call_hook_script(){
     log debug "EVE4PVE_BARC_KEEP:           $EVE4PVE_BARC_KEEP" 
     log debug "EVE4PVE_BARC_SNAP_NAME:      $EVE4PVE_BARC_SNAP_NAME" 
     log debug "EVE4PVE_BARC_BACKUP_FILE:    $EVE4PVE_BARC_BACKUP_FILE" 
-    log debug "EVE4PVE_BARC_HOST:           $EVE4PVE_BARC_HOST"
     log debug "-------------------------------------------------------" 
 
     if [ -e "$opt_script" ]; then

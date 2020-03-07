@@ -11,7 +11,6 @@ hook() {
 #    echo "EVE4PVE_BARC_KEEP:        $EVE4PVE_BARC_KEEP" 
 #    echo "EVE4PVE_BARC_SNAP_NAME:   $EVE4PVE_BARC_SNAP_NAME" 
 #    echo "EVE4PVE_BARC_BACKUP_FILE: $EVE4PVE_BARC_BACKUP_FILE" 
-#    echo "EVE4PVE_BARC_HOST:        $EVE4PVE_BARC_HOST"
     case "$EVE4PVE_BARC_PHASE" in
         #clean job status
         clean-job-start);;
