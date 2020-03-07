@@ -4,7 +4,7 @@
 # Author: Daniele Corsini <daniele.corsini@enterpriseve.com>
 #         Bastian Mäuser <bma@netz.org>        
 
-declare -r VERSION=0.2.4-renew
+declare -r VERSION=0.2.5-renew
 declare -r NAME=$(basename "$0")
 declare -r PROGNAME=${NAME%.*}
 
@@ -1163,6 +1163,7 @@ function restore(){
         regex='^([0-9]+)([a-zA-Z-]+)\.(.*)\.(diff|img).?(.*)?'
         [[ "$image" =~ $regex ]]
         searchdisk=${BASH_REMATCH[3]}
+        searchpool=${BASH_REMATCH[2]}
         local inchain=false
         local -a plan
         for backup_files in $(ls -r "$path_backup/"*{$EXT_IMAGE,$EXT_DIFF}{,.gz,.zz,.bz2} 2>/dev/null|xargs -n1 basename); do
@@ -1171,9 +1172,10 @@ function restore(){
             fi
             if [ "$inchain" == true ]; then
                 [[ "$backup_files" =~ $regex ]]
+                foundpool=${BASH_REMATCH[2]}
                 founddisk=${BASH_REMATCH[3]}
                 ext=${BASH_REMATCH[4]}
-                if [ "$founddisk" == "$searchdisk" ]; then
+                if [ "$founddisk" == "$searchdisk" ] && [ "$foundpool" == "$searchpool" ]; then
                     plan=("$backup_files" "${plan[@]}")
                     if [[ "$ext" == "img" ]]; then
                         break

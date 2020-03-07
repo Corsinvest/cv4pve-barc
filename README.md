@@ -126,7 +126,17 @@ snapshos it knows**.
 
 Whit parameter **--unprotect-snap** is possible to disable snapshot protection.
 
+## Installation of prerequisites
+
+If you want to use pigz compression which is recommended, install the package:
+
+```apt install pigz curl```
+
 ## Configuration and use
+
+There are two ways to use this tool: as APT package or from the Git repository. The Releases are always a little bit behind.
+
+#### APT
 
 Download package eve4pve-barc\_?.?.?-?\_all.deb, on your Proxmox VE host and
 install:
@@ -136,7 +146,42 @@ wget https://github.com/EnterpriseVE/eve4pve-barc/releases/download/?.?.?/eve4pv
 dpkg -i eve4pve-barc_?.?.?-?_all.deb
 ```
 
-This tool need basically no configuration.
+#### From Git:
+
+Map the network share you want the backups to be written to via nfs or cifs. I would recommend to place the backuptool on that share so you have it available if one node fails, otherwise you would have to install it to every node.
+
+```sh
+apt -y install git
+```
+
+Find out where your share is mounted, and change to that directory (this is usually in /mnt/pve):
+
+```sh
+cd /mnt/pve/backup
+```
+
+Create a directory where the backups shall live:
+
+```sh
+mkdir barc && cd barc
+```
+
+Clone the Git repo
+
+```sh
+git clone https://github.com/Corsinvest/cv4pve-barc
+```
+
+Pick a release
+```sh
+git checkout 0.2.5-renew
+```
+
+So you want to change to that directory or use the script with it's full path, eg 
+
+```sh
+/mnt/pve/backup/barc/cv4pve-barc/eve4pve-barc --help
+```
 
 ## Things to check
 
