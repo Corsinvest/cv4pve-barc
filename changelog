@@ -1,3 +1,15 @@
+eve4pve-barc (0.2.5)
+
+  Special thanks s @lephisto for the incredible code changes
+
+  * checksum support
+  * freeze support
+  * Renew backup
+  * Compression backup
+  * Improve logs
+
+ -- EnterpriseVE Support Team <support@enterpriseve.com>  07 Mar 2019 23:15:00 +0100
+
 eve4pve-barc (0.2.1)
 
   * Remove duplicate vmid from storage entry
