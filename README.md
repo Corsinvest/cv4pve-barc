@@ -128,6 +128,14 @@ Whit parameter **--unprotect-snap** is possible to disable snapshot protection.
 
 ## Configuration and use
 
+If you want to use pigz compression which is recommended, install the package:
+
+```apt install pigz```
+
+If you want to use InfluxDB Metric reporting, install Curl:
+
+``` apt install curl```
+
 Download package eve4pve-barc\_?.?.?-?\_all.deb, on your Proxmox VE host and
 install:
 
