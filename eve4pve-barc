@@ -1156,8 +1156,7 @@ function restore(){
         startts=$(date +%s)
 
         #Create actionplan
-        regex='^([0-9]+)([a-zA-Z-]+)\.(.*)\.(diff|img).?(.*)?'
-        [[ "$image" =~ $regex ]]
+        [[ "$image" =~ $reimg ]]
         searchdisk=${BASH_REMATCH[3]}
         searchpool=${BASH_REMATCH[2]}
         local inchain=false
@@ -1167,7 +1166,7 @@ function restore(){
                 inchain=true
             fi
             if [ "$inchain" == true ]; then
-                [[ "$backup_files" =~ $regex ]]
+                [[ "$backup_files" =~ $reimg ]]
                 foundpool=${BASH_REMATCH[2]}
                 founddisk=${BASH_REMATCH[3]}
                 ext=${BASH_REMATCH[4]}
@@ -1182,8 +1181,7 @@ function restore(){
         #Execute actionplan
         local backup=''
         for backup in "${plan[@]}"; do
-            regex='^([0-9]+)([a-zA-Z-]+)\.(.*)\.(diff|img).?(.*)?'
-            [[ "$backup" =~ $regex ]]
+            [[ "$backup" =~ $reimg ]]
             local timestamp_snap; timestamp_snap=${BASH_REMATCH[1]}
             local ext; ext=${BASH_REMATCH[4]}
             local cext; cext=${BASH_REMATCH[5]}
