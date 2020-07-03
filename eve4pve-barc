@@ -65,7 +65,7 @@ declare -g endts
 
 declare -r renum='^[0-9]+$'
 declare -r retime='([0-9]+)([d,w])$'
-declare -r reimg='^.*\/([0-9]+)([a-zA-Z-]+)\.(.*)\.(diff|img).?(.*)?'
+declare -r reimg='^.*\/([0-9]+)([a-zA-Z-_]+)\.(.*)\.(diff|img).?(.*)?'
 declare -r redateex='^([0-9]{4})([0-9]{2})([0-9]{2})([0-9]{2})([0-9]{2})([0-9]{2})$'
 
 function map_vmids_to_host(){
@@ -1275,9 +1275,8 @@ function status(){
         local image=''
         local backup=''
         local ckregex='^.*.(md5|sha1|sha224|sha384|sha512)$'
-        local regex='^.*\/([0-9]+)([a-zA-Z-]+)\.(.*)\.(diff|img).?(.*)?'
         for backup in $(ls -r "$path_backup/"*{$EXT_IMAGE,$EXT_DIFF}{,.gz,.zz,.bz2} 2>/dev/null); do
-            [[ "$backup" =~ $regex ]]
+            [[ "$backup" =~ $reimg ]]
             local ext; ext=${BASH_REMATCH[4]}
             local cext; cext=${BASH_REMATCH[5]}
             local image; image=${BASH_REMATCH[3]}
