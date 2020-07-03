@@ -2,7 +2,7 @@
 
 # EnterpriseVE Backup And Restore Ceph for Proxmox VE.
 # Author: Daniele Corsini <daniele.corsini@enterpriseve.com>
-#         Bastian Mäuser <bma@netz.org>        
+#         Bastian Mäuser <bma@netz.org>
 
 declare -r VERSION=0.2.5-renew
 declare -r NAME=$(basename "$0")
@@ -71,7 +71,7 @@ declare -r redateex='^([0-9]{4})([0-9]{2})([0-9]{2})([0-9]{2})([0-9]{2})([0-9]{2
 function map_vmids_to_host(){
     for node in $(/usr/bin/pvecm nodes | tail -n +5 | tr -s ' ' | cut -d' ' -f 4)
     do
-        for vm in $(ssh root@$node qm list | tail -n +2|tr -s ' '|cut -f 2 -d' ')
+        for vm in $(ssh root@$node qm list | tail -n +2 | tr -s ' ' | cut -f 2 -d' ')
         do
             pvnode[$vm]=$node
         done
@@ -101,23 +101,23 @@ Usage:
     $PROGNAME <COMMAND> [ARGS] [OPTIONS]
     $PROGNAME help
     $PROGNAME version
- 
+
     $PROGNAME create   --vmid=<string> --label=<string> --path=<string> [--keep=<integer>|--renew=<integer>]
-                          --script=<string> --mail=<string> --unprotect-snap --syslog 
-    $PROGNAME destroy  --vmid=<string> --label=<string> --path=<string> 
-    $PROGNAME enable   --vmid=<string> --label=<string> --path=<string> 
-    $PROGNAME disable  --vmid=<string> --label=<string> --path=<string> 
+                          --script=<string> --mail=<string> --unprotect-snap --syslog
+    $PROGNAME destroy  --vmid=<string> --label=<string> --path=<string>
+    $PROGNAME enable   --vmid=<string> --label=<string> --path=<string>
+    $PROGNAME disable  --vmid=<string> --label=<string> --path=<string>
 
     $PROGNAME backup   --vmid=<string> --label=<string> --path=<string> [--keep=<integer>|--renew=<integer>]
-                          --script=<string> --mail=<string> --unprotect-snap --syslog 
+                          --script=<string> --mail=<string> --unprotect-snap --syslog
     $PROGNAME restore  --vmid=<string> --label=<string> --path=<string>
-                          --script=<string> --syslog 
+                          --script=<string> --syslog
 
-    $PROGNAME status   --vmid=<string> --label=<string> --path=<string>   
+    $PROGNAME status   --vmid=<string> --label=<string> --path=<string>
     $PROGNAME clean    --vmid=<string> --label=<string> --path=<string> [--keep=<integer>|--renew=<integer>]
-    $PROGNAME reset    --vmid=<string> --label=<string>   
+    $PROGNAME reset    --vmid=<string> --label=<string>
     $PROGNAME assemble --vmid=<string> --label=<string> --path=<string>
-                          --script=<string> 
+                          --script=<string>
 Commands:
     version              Show version program
     help                 Show help program
@@ -133,10 +133,10 @@ Commands:
     assemble             Assemble a unique image with diff file. (Require eve4ceph-mdti)
 
 Options:
-    --vmid               The ID of the VM/CT, comma separated (es. 100,101,102), 
+    --vmid               The ID of the VM/CT, comma separated (es. 100,101,102),
                          'all-???' for all known guest systems in specific host (es. all-pve1, all-\$(hostname)),
                          'all' for all known guest systems in cluster,
-                         'storage-???' storage Proxmox VE (pool Ceph) 
+                         'storage-???' storage Proxmox VE (pool Ceph)
     --label              Is usually 'hourly', 'daily', 'weekly', or 'monthly'
     --path               Path destination backup
     --keep               Specify the number of backup which should will keep, (default: 1)
@@ -144,7 +144,7 @@ Options:
                          --renew=10 for keeping 10 Diffs until making a new full export
                          --renew=7d for making diffs up to 7 days, until making a new full export
     --retain             Specify how many Backups should be kept, timewise (default: infinite - if unset, nothing is ever deleted)
-                         --retain=30d to keep Backups for 30 days. If the Point in time matches a diff, 
+                         --retain=30d to keep Backups for 30 days. If the Point in time matches a diff,
                          it keeps all previous diffs up to the preceding full image to ensure possibility to restore data
     --cksum              Store checksums for snapshot validation (default: true)
     --ckmethod           Method used for Checksumming [m5sum, sha1sum, sha224sum, sha384sum, sha512sum] (default: sha1sum)
@@ -171,34 +171,34 @@ function log(){
     local message=$*
 
     case $level in
-        debug) 
+        debug)
             if [ $opt_debug -eq 1 ]; then
                 echo -e "$(date "+%F %T") DEBUG: $message";
                 echo -e "$(date "+%F %T") DEBUG: $message" >> "$LOG_FILE";
-            fi    
+            fi
             ;;
 
-        info) 
-            echo -e "$message"; 
+        info)
+            echo -e "$message";
             echo -e "$message" >> "$LOG_FILE";
             [ $opt_syslog -eq 1 ] && logger -t "$PROGNAME" "$message"
             ;;
 
         warn)
             echo "WARNING: $message" 1>&2
-            echo -e "$message" >> "$LOG_FILE";            
+            echo -e "$message" >> "$LOG_FILE";
             [ $opt_syslog -eq 1 ] && logger -t "$PROGNAME" -p daemon.warn "$message"
             ;;
-        
+
         error)
             echo "ERROR: $message" 1>&2
-            echo -e "$message" >> "$LOG_FILE";            
+            echo -e "$message" >> "$LOG_FILE";
             [ $opt_syslog -eq 1 ] && logger -t "$PROGNAME" -p daemon.err "$message"
             ;;
 
-        *)  
+        *)
             echo "$message" 1>&2
-            echo -e "$message" >> "$LOG_FILE";            
+            echo -e "$message" >> "$LOG_FILE";
             [ $opt_syslog -eq 1 ] && logger -t "$PROGNAME" "$message"
             ;;
     esac
@@ -245,7 +245,7 @@ function parse_opts(){
 
     eval set -- "$args"
 
-    while true; do    
+    while true; do
       case "$1" in
         --vmid) opt_vm_ids=$2; shift 2;;
         --label) opt_label="$2"; shift 2;;
@@ -308,7 +308,7 @@ function parse_opts(){
         #all in specific host
 
         local host=${opt_vm_ids#*-}
-        
+
         if ! exist_file "$PVE_NODES/$host"; then
             log info "Host not found!"
             end_process 1
@@ -325,8 +325,8 @@ function parse_opts(){
 
         local storage=${opt_vm_ids#*-}
 
-        if ! pvesm list "$storage" > /dev/null 2>&1; then    
-            log info "Pool '$storage' not found in Proxmox VE storage." 
+        if ! pvesm list "$storage" > /dev/null 2>&1; then
+            log info "Pool '$storage' not found in Proxmox VE storage."
             end_process 1
         fi
 
@@ -335,7 +335,7 @@ function parse_opts(){
     else
         #comma separated
         vm_ids=$(echo "$opt_vm_ids" | tr ',' "\n")
-        
+
     fi
 
     [ -z "$opt_label" ] && { log info "Label is not set correctly"; end_process 1; }
@@ -352,9 +352,9 @@ function cron_action_job(){
     local action=$1
     parse_opts "$@"
 
-    local -r cron_file="/etc/cron.d/$PROGNAME"    
+    local -r cron_file="/etc/cron.d/$PROGNAME"
     local -r job_key_cron="backup --vmid=$opt_vm_ids --label='$opt_label' --path='$opt_path_backup'"
-    
+
     #create cron file if not exist
     if [ ! -e "$cron_file" ]; then
         cat > "$cron_file" << EOL
@@ -363,9 +363,9 @@ SHELL=/bin/sh
 PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 
 EOL
-    fi    
+    fi
 
-    local check=0; [ "$action" = "create" ] && check=1 
+    local check=0; [ "$action" = "create" ] && check=1
     if grep -h "$job_key_cron" "$cron_file"; then
         [ $check -eq 1 ] && { log info "Job already exists in cron file '$cron_file'"; exit 1; }
     else
@@ -378,9 +378,9 @@ EOL
             local cron_scheduling="0 0 * * *"             #Default run once a day at midnight
 
             case "$opt_label" in
-                (*hourly*) cron_scheduling="0 * * * *";;  #Run once an hour at the beginning of the hour	
-                (*daily*) cron_scheduling="0 0 * * *";;   #Run once a day at midnight             
-                (*weekly*) cron_scheduling="0 0 * * 0";;  #Run once a week at midnight on Sunday morning	
+                (*hourly*) cron_scheduling="0 * * * *";;  #Run once an hour at the beginning of the hour
+                (*daily*) cron_scheduling="0 0 * * *";;   #Run once a day at midnight
+                (*weekly*) cron_scheduling="0 0 * * 0";;  #Run once a week at midnight on Sunday morning
                 (*monthly*) cron_scheduling="0 0 1 * *";; #Run once a month at midnight of the first day of the month
             esac
 
@@ -394,8 +394,8 @@ EOL
             [ ! -z "$opt_iothreads" ] && job="$job --iothreads=$opt_iothreads"
             [ -e "$opt_script" ] && job="$job --script='$opt_script'"
             [ $opt_unprotect_snap -eq 1 ] && job="$job --unprotect-snap"
-            [ $opt_syslog -eq 1 ] && job="$job --syslog"     
-            [ ! -z "$opt_addr_mail" ] && job="$job --mail='$opt_addr_mail'"  
+            [ $opt_syslog -eq 1 ] && job="$job --syslog"
+            [ ! -z "$opt_addr_mail" ] && job="$job --mail='$opt_addr_mail'"
 
             echo -e "$job" >> "$cron_file"
             ;;
@@ -485,14 +485,14 @@ function create_snapshot(){
     call_hook_script "snap-create-pre" "$snap" "-"
     log info "VM $vm_id - Creating snapshot $snap"
 
-    if ! do_run "rbd snap create $snap"; then    
+    if ! do_run "rbd snap create $snap"; then
         call_hook_script "snap-create-abort" "$snap" "-"
         return 1;
     fi
 
     #check if protected/unprotect mode snapshot
     if [ $opt_unprotect_snap -eq 0 ]; then
-        if ! do_run "rbd snap protect $snap"; then    
+        if ! do_run "rbd snap protect $snap"; then
             call_hook_script "snap-create-abort" "$snap" "-"
             return 1;
         fi
@@ -509,17 +509,17 @@ function remove_snaphot(){
 
     [ "$hook" -eq 1 ] && call_hook_script "snap-remove-pre" "$snap" "-"
     log info "VM $vm_id - Remove snapshot $snap"
-    
+
     #check is protectd
     local info; info=$(rbd info $snap | grep 'protected: True');
     if [ ! -z "$info" ]; then
-        if ! do_run "rbd snap unprotect $snap"; then    
+        if ! do_run "rbd snap unprotect $snap"; then
             [ "$hook" -eq 1 ] && call_hook_script "snap-remove-abort" "$snap" "-"
             return 1;
         fi
     fi
 
-    if ! do_run "rbd snap rm $snap"; then    
+    if ! do_run "rbd snap rm $snap"; then
         [ "$hook" -eq 1 ] && call_hook_script "snap-remove-abort" "$snap" "-"
         return 1;
     fi
@@ -536,18 +536,18 @@ function call_hook_script(){
     export EVE4PVE_BARC_LABEL="$opt_label"
     export EVE4PVE_BARC_KEEP=$opt_keep
 
-    log debug "-------------------------------------------------------" 
-    log debug "EVE4PVE_BARC_PHASE:          $EVE4PVE_BARC_PHASE" 
-    log debug "EVE4PVE_BARC_VMID:           $EVE4PVE_BARC_VMID" 
-    log debug "EVE4PVE_BARC_PATH:           $EVE4PVE_BARC_PATH" 
-    log debug "EVE4PVE_BARC_LABEL:          $EVE4PVE_BARC_LABEL" 
-    log debug "EVE4PVE_BARC_KEEP:           $EVE4PVE_BARC_KEEP" 
-    log debug "EVE4PVE_BARC_SNAP_NAME:      $EVE4PVE_BARC_SNAP_NAME" 
-    log debug "EVE4PVE_BARC_BACKUP_FILE:    $EVE4PVE_BARC_BACKUP_FILE" 
-    log debug "-------------------------------------------------------" 
+    log debug "-------------------------------------------------------"
+    log debug "EVE4PVE_BARC_PHASE:          $EVE4PVE_BARC_PHASE"
+    log debug "EVE4PVE_BARC_VMID:           $EVE4PVE_BARC_VMID"
+    log debug "EVE4PVE_BARC_PATH:           $EVE4PVE_BARC_PATH"
+    log debug "EVE4PVE_BARC_LABEL:          $EVE4PVE_BARC_LABEL"
+    log debug "EVE4PVE_BARC_KEEP:           $EVE4PVE_BARC_KEEP"
+    log debug "EVE4PVE_BARC_SNAP_NAME:      $EVE4PVE_BARC_SNAP_NAME"
+    log debug "EVE4PVE_BARC_BACKUP_FILE:    $EVE4PVE_BARC_BACKUP_FILE"
+    log debug "-------------------------------------------------------"
 
     if [ -e "$opt_script" ]; then
-        log debug "VM $vm_id - Script hook: $opt_script" 
+        log debug "VM $vm_id - Script hook: $opt_script"
         do_run "$opt_script"
     fi
 }
@@ -561,7 +561,7 @@ function get_disks_from_config(){
     #read current config
     disks=$(while read -r line; do
                 [[ "$line" == "" ]] && break
-                echo "$line" 
+                echo "$line"
             done < "$file_config" | \
             grep -P '^(?:((?:virtio|ide|scsi|sata|mp|efidisk)\d+)|rootfs): ' | \
             grep -v -P 'cdrom|none' | \
@@ -604,7 +604,7 @@ function backup(){
 
     for vm_id in $vm_ids; do
         vmtotal=$((vmtotal+1))
-        local file_config; file_config=$(get_config_file)        
+        local file_config; file_config=$(get_config_file)
         [ -z "$file_config" ] && continue
 
 
@@ -643,7 +643,7 @@ function backup(){
             snapshottotal=$((snapshottotal+1))
             #check rbd device image-spec is pool-name/image-name
             image_spec=$(get_image_spec "$disk")
-            [ -z "$image_spec" ] && continue 
+            [ -z "$image_spec" ] && continue
 
             #pool-name/image-name@snap-name
             current_snap="$image_spec@$snap_name_prefix$timestamp"
@@ -661,7 +661,7 @@ function backup(){
             local diffcount=0
             local renew=false
             #count mode (accumulate diff's until they exceed a given number --renew=X)
-            if [[ $opt_renew =~ $renum ]]; then 
+            if [[ $opt_renew =~ $renum ]]; then
                 for backup_files_present in $(ls -r $path_backup/*$suffix_backup_file{$EXT_DIFF,$EXT_IMAGE}{.zz,.gz,.bz2,} 2>/dev/null); do
                     if [[ "$backup_files_present" =~ $reimg ]]; then
                         ext=${BASH_REMATCH[4]}
@@ -710,26 +710,26 @@ function backup(){
             fi
 
             #check exist initial export
-            if [[ $(ls $path_backup/*$suffix_backup_file$EXT_IMAGE{.zz,.gz,.bz2,} 2>/dev/null|wc -l) == 0 ]]; then 
-                #initial export not exist            
-                log info "VM $vm_id - No previous backup: issueing full run for $disk" 
+            if [[ $(ls $path_backup/*$suffix_backup_file$EXT_IMAGE{.zz,.gz,.bz2,} 2>/dev/null|wc -l) == 0 ]]; then
+                #initial export not exist
+                log info "VM $vm_id - No previous backup: issueing full run for $disk"
                 backup_file="$backup_file$EXT_IMAGE"
                 if ! create_snapshot "$current_snap"; then
                     [[ "$opt_qemu_freeze" == true ]] && vm_unfreeze "$vm_id" "${pvnode[$vm_id]}"
-                    rc=20                         
+                    rc=20
                     break;
                 fi
                 export_type[$export_idx]="image"
             else
                 if [ "$renew" == true ]; then
-                    log info "VM $vm_id - Renew policy requires full run for $disk" 
+                    log info "VM $vm_id - Renew policy requires full run for $disk"
                     backup_file="$backup_file$EXT_IMAGE"
                 else
-                    log info "VM $vm_id - Renew policy tolerates incremental run for $disk" 
+                    log info "VM $vm_id - Renew policy tolerates incremental run for $disk"
                     backup_file="$backup_file$EXT_DIFF"
                 fi
 
-                #Snapshot Housekeeping..                
+                #Snapshot Housekeeping..
                 #find last snapshot in ceph
                 latest_snap=$(rbd snap ls "$image_spec" | \
                               awk '{print $2}' | \
@@ -737,9 +737,9 @@ function backup(){
 
                 #not exist snapshot on rbd
                 if [ -z "$latest_snap" ]; then
-                    log error "VM $vm_id - Ceph last snapshot '$image_spec' not found!";                    
-                    call_hook_script "export-diff-abort" "-" "-"                 
-                    rc=30                         
+                    log error "VM $vm_id - Ceph last snapshot '$image_spec' not found!";
+                    call_hook_script "export-diff-abort" "-" "-"
+                    rc=30
                     break;
                 fi
 
@@ -762,14 +762,14 @@ function backup(){
                 latest_backup="$snap_name_prefix$latest_backup"
 
                 if ! rbd snap ls "$image_spec" | awk '{print $2}' | grep -q "$latest_backup"; then
-                    log warn "VM $vm_id - Backup '$latest_backup' not found in ceph '$image_spec' snapshot!";                    
+                    log warn "VM $vm_id - Backup '$latest_backup' not found in ceph '$image_spec' snapshot!";
                     log info "VM $vm_id - Issuing full run for $image_spec"
                     renew=true
                 fi
 
                 if ! create_snapshot "$current_snap"; then
                     [[ "$opt_qemu_freeze" == true ]] && vm_unfreeze "$vm_id" "${pvnode[$vm_id]}"
-                    rc=60                        
+                    rc=60
                     break;
                 fi
 
@@ -780,7 +780,7 @@ function backup(){
                     export_type[$export_idx]="diff"
                 fi
             fi
-            snapshotok=$((snapshotok+1))             
+            snapshotok=$((snapshotok+1))
 
             export_current_snap[$export_idx]="$current_snap"
             export_backup_file[$export_idx]="$backup_file"
@@ -823,7 +823,7 @@ function backup(){
                 log info "VM $vm_id - Export initial '$backup_file'"
                 if [ "$opt_cksum" == true ]; then
                     excmd="rbd export --rbd-concurrent-management-ops $opt_iothreads $current_snap - | tee >($compress > '$backup_file') | tee >({ wc -c; } > $backup_file.${ckext[$opt_ckmethod]}.size) | $opt_ckmethod > $backup_file.${ckext[$opt_ckmethod]}"
-                else 
+                else
                     excmd="rbd export --rbd-concurrent-management-ops $opt_iothreads $current_snap '$backup_file'"
                 fi
                 log info "VM $vm_id - excmd: $excmd"
@@ -846,7 +846,7 @@ function backup(){
                 fi
 
             elif [ "$type" == "diff" ]; then
-                #export-diff difference previous snapshot 
+                #export-diff difference previous snapshot
                 call_hook_script "export-diff-pre" "$current_snap" "$backup_file"
                 log info "VM $vm_id - Export diff '$backup_file'"
                 if [ "$opt_cksum" == true ]; then
@@ -862,7 +862,7 @@ function backup(){
 
                     log info "VM $vm_id - Remove file '$backup_file'"
                     rm -f "$backup_file"
-                    
+
                     break;
                 fi
 
@@ -872,7 +872,7 @@ function backup(){
                 remove_snaphot "$image_spec@$latest_snap" 1
             fi
             exportok=$((exportok+1))
-            log info "VM $vm_id - Size $(bytesToHuman "$(get_size_file "$backup_file")") Uncompressed: $(bytesToHuman "$(<$backup_file.${ckext[$opt_ckmethod]}.size)") Compressionratio 1:$(($(<$backup_file.${ckext[$opt_ckmethod]}.size)/$(get_size_file "$backup_file")))" 
+            log info "VM $vm_id - Size $(bytesToHuman "$(get_size_file "$backup_file")") Uncompressed: $(bytesToHuman "$(<$backup_file.${ckext[$opt_ckmethod]}.size)") Compressionratio 1:$(($(<$backup_file.${ckext[$opt_ckmethod]}.size)/$(get_size_file "$backup_file")))"
             bytecount=$((bytecount+$(sum_size_file "$backup_file")))
             uncompressedbytecount=$((uncompressedbytecount+$(<$backup_file.${ckext[$opt_ckmethod]}.size)))
         done
@@ -907,12 +907,12 @@ function backup(){
 
     rm "$pid_file"
 
-    call_hook_script "backup-job-end" "-" "-"        
+    call_hook_script "backup-job-end" "-" "-"
 
     timestamp=$(date +%Y%m%d%H%M%S)
     log info "End backup $(date "+%F %T")"
     endts=$(date +%s)
-    end_process $rc 
+    end_process $rc
 }
 
 function get_size_file(){
@@ -953,7 +953,7 @@ function housekeeping() {
                     do_run "rm $image*"
                     do_run "rm $path_backup/$ts.conf"
                 fi
-                if [[ "$imgreached" == true ]]; then 
+                if [[ "$imgreached" == true ]]; then
                     keepfile=false
                 fi
             fi
@@ -974,7 +974,7 @@ function housekeeping() {
                     do_run "rm $image*"
                     do_run "rm $path_backup/$ts.conf"
                 fi
-                if [[ "$imgreached" == true ]]; then 
+                if [[ "$imgreached" == true ]]; then
                     keepfile=false
                 fi
             fi
@@ -988,7 +988,7 @@ function merge_diff_backup(){
     for image in $path_backup/*$EXT_IMAGE; do
         image=$(basename "$image")
 
-        local suffix_backup_file=${image:14}        
+        local suffix_backup_file=${image:14}
         suffix_backup_file=${suffix_backup_file%.*}
 
         local first_diff=''
@@ -998,7 +998,7 @@ function merge_diff_backup(){
         #loop diff
         local export_diff=''
         for export_diff in $(ls -r "$path_backup/"*$suffix_backup_file$EXT_DIFF 2>/dev/null); do
-            if [ "$index" -ge "$opt_keep" ]; then            
+            if [ "$index" -ge "$opt_keep" ]; then
                 if [ -z "$second_diff" ]; then
                     second_diff="$export_diff"
                 else
@@ -1009,26 +1009,26 @@ function merge_diff_backup(){
 
                     if do_run "rbd merge-diff '$first_diff' '$second_diff' '$merged_diff'"; then
                         #ok result
-                        log info "VM $vm_id - Removing backup '$first_diff'"; 
+                        log info "VM $vm_id - Removing backup '$first_diff'";
                         do_run "rm '$first_diff'"
-                        
+
                         log info "VM $vm_id - Removing backup '$second_diff'"
-                        do_run "rm '$second_diff'"    
+                        do_run "rm '$second_diff'"
 
                         #rename new merge in second_diff
                         do_run "mv '$merged_diff' '$second_diff'"
 
                         #remove config
-                        local tms_first_diff; tms_first_diff=$(basename "$first_diff" | awk '{print substr($1,1,12)}') 
+                        local tms_first_diff; tms_first_diff=$(basename "$first_diff" | awk '{print substr($1,1,12)}')
                         do_run "rm -f '$path_backup/$tms_first_diff$EXT_CONF'"
 
                         #remove firewall
                         local file_firewall="$path_backup/$tms_first_diff$EXT_FIREWALL"
                         [ -e "$file_firewall" ] && do_run "rm '$file_firewall'"
-                    
+
                         first_diff=''
-                        second_diff=''                      
-                    else    
+                        second_diff=''
+                    else
                         #Error
                         log error "VM $vm_id - Merge diff backup '$(basename $first_diff)' '$(basename $second_diff)' to '$(basename "$merged_diff")'"
                         do_run "rm -f $merged_diff"
@@ -1051,11 +1051,11 @@ function get_config_file(){
 
     elif exist_file "$LXC_CONF_CLUSTER/$vm_id$EXT_CONF"; then
         file_config=$(ls $LXC_CONF_CLUSTER/$vm_id$EXT_CONF)
-    
+
     else
         log error "VM $vm_id - Unknown technology"
 
-    fi 
+    fi
 
     echo "$file_config"
 }
@@ -1063,7 +1063,7 @@ function get_config_file(){
 function get_image_spec(){
     local image_spec;
     local disk="$1"
-    
+
     #if krbd enable
     image_spec=$(pvesm path "$disk" | grep '^/dev/rbd/' | sed -e "s/^\/dev\/rbd\///")
     if [ -z "$image_spec" ]; then
@@ -1075,9 +1075,9 @@ function get_image_spec(){
 
 function reset(){
     parse_opts "$@"
-    
+
     for vm_id in $vm_ids; do
-        local file_config; file_config=$(get_config_file)        
+        local file_config; file_config=$(get_config_file)
         [ -z "$file_config" ] && continue
 
         #decode disk
@@ -1085,12 +1085,12 @@ function reset(){
         for disk in $(get_disks_from_config "$file_config"); do
             #check rbd device image-spec is pool-name/image-name
             local image_spec; image_spec=$(get_image_spec "$disk")
-            [ -z "$image_spec" ] && continue 
+            [ -z "$image_spec" ] && continue
 
             local snap_name
             for snap_name in $(rbd snap ls "$image_spec" | \
-                               awk '{print $2}' | 
-                               grep "$opt_label" | sort -r); do 
+                               awk '{print $2}' |
+                               grep "$opt_label" | sort -r); do
 
                 remove_snaphot "$image_spec@$snap_name" 0
             done
@@ -1105,8 +1105,8 @@ function restore(){
     log info "ACTION: Restore image"
 
     for vm_id in $vm_ids; do
-        get_path   
-        
+        get_path
+
         local title="EnterpriseVE BARC | Restore image"
 
         images=($(ls -r "$path_backup/"*{$EXT_IMAGE,$EXT_DIFF}{,.gz,.zz,.bz2} 2>/dev/null|xargs -n1 basename|awk '{ printf "%s %s\n", $0, $0}'))
@@ -1123,7 +1123,7 @@ function restore(){
         pools=($(rados lspools | awk '{printf "%s %s\n",$1,$1}'))
 
         #select timestamp
-        local pool_name; 
+        local pool_name;
         pool_name=$(whiptail --title "$title" \
                     --menu "Choose destination Ceph pool:" \
                     --notags 25 60 14 "${pools[@]}" 3>&1 1>&2 2>&3)
@@ -1132,12 +1132,12 @@ function restore(){
 
         while true; do
             #name_import
-            local name_import; 
+            local name_import;
             name_import=$(whiptail --title "$title" \
                         --inputbox "Specify image name import" 8 78 \
                         "$(echo "$image" | awk '{ split($0,a,"."); print a[2]}')" 3>&1 1>&2 2>&3)
-                
-            [ -z "$name_import" ] && exit 1    
+
+            [ -z "$name_import" ] && exit 1
             if ! rbd ls "$pool_name" | grep -q "$name_import"; then
                 break;
             else
@@ -1152,7 +1152,7 @@ function restore(){
         call_hook_script "restore-job-start" "-" "-"
 
         log info "Start restore $(date "+%F %T") $image"
-        
+
         startts=$(date +%s)
 
         #Create actionplan
@@ -1204,7 +1204,7 @@ function restore(){
             local streamcksum
             case ".$ext" in
                 "$EXT_IMAGE" )
-                    log info "Initial import $backup" 
+                    log info "Initial import $backup"
                     cmd="$compress '$path_backup/$backup'| tee >(rbd import --no-progress --image-format 2 - $pool_name/$name_import) | $opt_ckmethod"
                     log info "VM $vm_id - importcmd: $cmd"
                     streamcksum=$(eval "$cmd")
@@ -1246,15 +1246,15 @@ function restore(){
         log info "Remove all snapshots"
         do_run "rbd snap purge $pool_name/$name_import"
 
-        log info "Backup $image restored in $pool_name/$name_import with success!"    
-        log info "Consider to manually create VM/CT and change config file from backup adapting restored image."    
+        log info "Backup $image restored in $pool_name/$name_import with success!"
+        log info "Consider to manually create VM/CT and change config file from backup adapting restored image."
 
         call_hook_script "restore-job-end" "-" "-"
         endts=$(date +%s)
         log info "End restore $(date "+%F %T")"
         local -i runtime=$(expr $endts - $startts)
         local -i bps=$(expr $uncompressedbytecount/$runtime)
-        
+
         log info "$(bytesToHuman "$uncompressedbytecount") restored in $runtime Seconds. [$(bytesToHuman "$bps")/s] [Compressed Size $(bytesToHuman "$bytecount")]"
         map_vmids_to_host
 
@@ -1303,7 +1303,7 @@ function status(){
                     "$(bytesToHuman "$(get_size_file "$backup")")" \
                     "$(bytesToHuman "$uncompressed")" \
                     "$ts" \
-                    "$pool:$image" 
+                    "$pool:$image"
             if  [[ "$ckformat" != "" ]]; then
                 echo "                                  $ckformat: $cksum"
             fi
@@ -1328,11 +1328,11 @@ function assemble(){
     parse_opts "$@"
 
     for vm_id in $vm_ids; do
-        get_path   
+        get_path
 
         local title="EnterpriseVE BARC | Assemble"
 
-        #list all image available 
+        #list all image available
         images=($(ls "$path_backup/"*$EXT_IMAGE | \
                   xargs -n 1 basename | \
                   awk '{printf "%s %s\n",substr($1,13,length($1)-16),substr($1,13,length($1)-16)}'))
@@ -1345,7 +1345,7 @@ function assemble(){
 
         [ -z "$image" ] && exit 1
 
-        #list all date available 
+        #list all date available
         timestamps=($(ls -r "$path_backup/"*$image* | \
                       xargs -n 1 basename | \
                       awk '{print substr($1,1,12),substr($1,1,2) "-" substr($1,3,2) "-" substr($1,5,2) "_" substr($1,7,2) ":" substr($1,9,2) ":" substr($1,11,2)}'))
@@ -1358,7 +1358,7 @@ function assemble(){
 
         [ -z "$timestamp" ] && exit 1
 
-        local new_image="assemble-$image" 
+        local new_image="assemble-$image"
         if ! whiptail --title "$title" --yesno "Confirm assemble $image in $new_image?" 8 78; then
             exit 1
         fi
@@ -1377,10 +1377,10 @@ function assemble(){
                 do_run "$cmd_assemble '$path_backup/$new_image$EXT_IMAGE' '$backup'"
             fi
 
-            [[ $backup == "$path_backup/$timestamp.$image"* ]] && break;        
-        done     
+            [[ $backup == "$path_backup/$timestamp.$image"* ]] && break;
+        done
 
-        log info "Backup $image assebled in $new_image with success!"    
+        log info "Backup $image assebled in $new_image with success!"
 
         call_hook_script "assemble-job-end" "-" "-"
 
@@ -1411,7 +1411,7 @@ function end_process(){
     exit "$rc";
 }
 
-function main(){    
+function main(){
     [ $# = 0 ] && usage;
 
     #command
@@ -1419,12 +1419,12 @@ function main(){
         version) echo "$VERSION";;
         help) usage "$@";;
         create|destroy|enable|disable) cron_action_job "$@";;
-        backup) backup "$@";; 
-        restore) restore "$@";;       
+        backup) backup "$@";;
+        restore) restore "$@";;
         clean) clean "$@";;
-        status) status "$@";; 
-        reset) reset "$@";; 
-        assemble) assemble "$@";; 
+        status) status "$@";;
+        reset) reset "$@";;
+        assemble) assemble "$@";;
         *) usage;;
     esac
 
