@@ -31,7 +31,7 @@ declare opt_cksum=true
 declare opt_ckmethod="sha1sum"
 declare opt_compress="none"
 declare opt_compressthreads=2
-declare opt_qemu_freeze=true
+declare opt_qemu_freeze=false
 declare opt_renew #=0
 declare opt_retain
 declare -i opt_keep #=0
