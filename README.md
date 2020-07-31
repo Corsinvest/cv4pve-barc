@@ -61,7 +61,7 @@ Options:
     --vmid               The ID of the VM/CT, comma separated (es. 100,101,102),
                          'all-???' for all known guest systems in specific host (es. all-pve1, all-$(hostname)),
                          'all' for all known guest systems in cluster,
-                         'storage-???' storage Proxmox VE (pool Ceph) 
+                         'storage-???' storage Proxmox VE (pool Ceph)
     --label              Is usually 'hourly', 'daily', 'weekly', or 'monthly'
     --path               Path destination backup
     --keep               Specify the number of backup which should will keep, Default 1 (can't be used with --renew)
@@ -69,7 +69,7 @@ Options:
                          --renew=10 for keeping 10 Diffs until making a new full export
                          --renew=7d for making diffs up to 7 days, until making a new full export
     --retain             Specify how many Backups should be kept, timewise (default: infinite - if unset, nothing is ever deleted)
-                         --retain=30d to keep Backups for 30 days. If the Point in time matches a diff, 
+                         --retain=30d to keep Backups for 30 days. If the Point in time matches a diff,
                          it keeps all previous diffs up to the preceding full image to ensure possibility to restore data
     --cksum              Store checksums for snapshot validation (default: true)
     --qemu-freeze        Issue fsfreeze-freeze prio snapshotting and fsfreeze-thaw after snapshot completion (default: true)
@@ -82,6 +82,8 @@ Options:
     --mail               Email addresses send log backup, comma separated (es. info@domain.ltd,info1@domain.ltd)
     --unprotect-snap     Disable protection snapshot, default is protected.
                          In Proxmox VE 'protected snapshot' cause problem in remove VM/CT see documentation.
+    --debug              Show detail debug
+    --dry-run            Not execute command print only
 
 Report bugs to <support@enterpriseve.com>
 ```
@@ -177,7 +179,7 @@ Pick a release
 git checkout 0.2.5-renew
 ```
 
-So you want to change to that directory or use the script with it's full path, eg 
+So you want to change to that directory or use the script with it's full path, eg
 
 ```sh
 /mnt/pve/backup/barc/cv4pve-barc/eve4pve-barc --help
@@ -189,7 +191,7 @@ So you want to change to that directory or use the script with it's full path, e
 
 ## Retention mode
 
-eve4barc currently supports two retention modes: --keep and --renew. 
+eve4barc currently supports two retention modes: --keep and --renew.
 
 - In --keep mode one initial full Backup is made and subsequent incremeltal Backups are collected. Once the keep Value is exceeded, the oldest incremental file is merged with the second oldest. For Example with --keep=4 this would look like:
 
@@ -219,7 +221,7 @@ eve4barc currently supports two retention modes: --keep and --renew.
 
 This goes forever, the Basecopy is never refreshed and the first diff will grow over time.
 
-- In --renew mode, one full Backup is made in regular Intervals, no merging happens. For Example with --renew=3 this would look like: 
+- In --renew mode, one full Backup is made in regular Intervals, no merging happens. For Example with --renew=3 this would look like:
 
 ```ditaa {cmd=true args=["-E"]}
 +---------+   +-----+   +-----+   +-----+   +---------+   +-----+   +-----+   +-----+
@@ -257,7 +259,7 @@ FSFREEZE_D=$(dirname -- "$0")/fsfreeze-hook.d
 # Check whether file $1 is a backup or rpm-generated file and should be ignored
 is_ignored_file() {
     case "$1" in
-        *~ | *.bak | *.orig | *.rpmnew | *.rpmorig | *.rpmsave | *.sample | *.dpkg-old | *.dpkg-new | *.dpkg-tmp | *.dpkg-dist | 
+        *~ | *.bak | *.orig | *.rpmnew | *.rpmorig | *.rpmsave | *.sample | *.dpkg-old | *.dpkg-new | *.dpkg-tmp | *.dpkg-dist |
 *.dpkg-bak | *.dpkg-backup | *.dpkg-remove)
             return 0 ;;
     esac
@@ -397,15 +399,15 @@ Show status backup in directory destination.
 
 ```sh
 
-root@pve1:~# /eve4pve-barc status --vmid=102 --label=daily --path=/mnt/bckceph 
+root@pve1:~# /eve4pve-barc status --vmid=102 --label=daily --path=/mnt/bckceph
 VM   TYPE COMP        SIZE UNCOMP       BACKUP           IMAGE
-102  diff zz     74 Bytes 78 Bytes      20200209151149   vm-102-disk-0 
+102  diff zz     74 Bytes 78 Bytes      20200209151149   vm-102-disk-0
                                   sha1: 25737f6ecc6827e1375c995b2350b17c43571446
-102  diff       85.78 MiB 85.78 MiB     20200209150608   vm-102-disk-0 
+102  diff       85.78 MiB 85.78 MiB     20200209150608   vm-102-disk-0
                                   sha1: 993ab8c40a8ef59275c5dfc340577bb2a950e2c2
-102  diff      405.00 KiB 405.00 KiB    20200208211801   vm-102-disk-0 
+102  diff      405.00 KiB 405.00 KiB    20200208211801   vm-102-disk-0
                                   sha1: 7a77977fbe43c2ab1c4b69d56ea90a594ba62601
-102  img        12.19 GiB 12.19 GiB     20200208211052   vm-102-disk-0 
+102  img        12.19 GiB 12.19 GiB     20200208211052   vm-102-disk-0
                                   sha1: e30f05de912bf497654a94c924d945320b6ffc0c
 
 
@@ -438,7 +440,7 @@ drwxr-xr-x 2 root root           0 Jan 27 19:51 ..
 ```
 
 *.img/diff files contain your data
-.sha1 (or md5 or whatever you choose) file contains the checksum of the _uncompressed_ data 
+.sha1 (or md5 or whatever you choose) file contains the checksum of the _uncompressed_ data
 .size file the Size of the uncompressed stream
 .conf files contain the VM Configuration.
 
