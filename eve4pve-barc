@@ -158,6 +158,8 @@ Options:
     --mail               Email addresses send log backup, comma separated (es. info@domain.ltd,info1@domain.ltd)
     --unprotect-snap     Disable protection snapshot, default is protected.
                          In Proxmox VE 'protected snapshot' cause problem in remove VM/CT see documentation.
+    --debug              Show detail debug
+    --dry-run            Not execute command print only
 
 Report bugs to <support@enterpriseve.com>
 EOF
