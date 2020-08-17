@@ -1,3 +1,9 @@
+eve4pve-barc (0.2.6)
+
+  * fix Regexp
+
+ -- EnterpriseVE Support Team <support@enterpriseve.com>  17 Aug 2019 09:42:00 +0100
+
 eve4pve-barc (0.2.5)
 
   Special thanks s @lephisto for the incredible code changes
@@ -15,13 +21,13 @@ eve4pve-barc (0.2.1)
   * Remove duplicate vmid from storage entry
 
  -- EnterpriseVE Support Team <support@enterpriseve.com>  07 Jun 2019 11:50:01 +0100
- 
+
  eve4pve-barc (0.2.0)
 
   * Improve code
 
  -- EnterpriseVE Support Team <support@enterpriseve.com>  29 Mar 2019 11:50:01 +0100
- 
+
  eve4pve-barc (0.1.9)
 
   * Add support backup VM in storage Proxmox VE (pool Ceph)
@@ -33,14 +39,14 @@ eve4pve-barc (0.2.1)
 eve4pve-barc (0.1.8)
 
   * Initialize arrays to prevent values filled from previous jobs/vm #22
-  * Improve code 
+  * Improve code
 
  -- EnterpriseVE Support Team <support@enterpriseve.com>  26 Sep 2017 11:50:01 +0100
 
 eve4pve-barc (0.1.7)
 
   * Fix problem more snapshot/configuration in config file VM/CT #16
-  * Improve code 
+  * Improve code
 
  -- EnterpriseVE Support Team <support@enterpriseve.com>  26 Sep 2017 11:50:01 +0100
 
@@ -51,10 +57,10 @@ eve4pve-barc (0.1.6)
   * Fix multiple disk before create snapshot and after export image #15
 
  -- EnterpriseVE Support Team <support@enterpriseve.com>  25 Sep 2017 16:22:01 +0100
- 
+
  eve4pve-barc (0.1.5)
 
-  * Keep the cronjobs while installing a new version of the package #9  
+  * Keep the cronjobs while installing a new version of the package #9
   * Check if snapshot exist in rbd pool in incremental #12
   * Fix restore problem #10
 
@@ -68,11 +74,11 @@ eve4pve-barc (0.1.4)
   * Add --unprotect-snap parameter disable protection snap
 
  -- EnterpriseVE Support Team <support@enterpriseve.com>  04 Apr 2017
- 
+
  eve4pve-barc (0.1.3)
 
   * Support krbd flag
-  * Add all-^??? hostname 
+  * Add all-^??? hostname
 
  -- EnterpriseVE Support Team <support@enterpriseve.com>  13 Feb 2017
 
@@ -96,5 +102,5 @@ eve4pve-barc (0.1.1)
  eve4pve-barc (0.1.0-1)
 
   * Initial implementation fanstatic code
-  
+
  -- EnterpriseVE Support Team <support@enterpriseve.com>  11 Jan 2017
