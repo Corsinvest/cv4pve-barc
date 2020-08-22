@@ -67,6 +67,7 @@ declare -g endts
 declare -r renum='^[0-9]+$'
 declare -r retime='([0-9]+)([d,w])$'
 declare -r reimg='^.*\/([0-9]+)([a-zA-Z-]+)\.(.*)\.(diff|img).?(.*)?'
+declare -r repool='([a-zA-Z0-9-]+):(.*)'
 declare -r redateex='^([0-9]{4})([0-9]{2})([0-9]{2})([0-9]{2})([0-9]{2})([0-9]{2})$'
 
 
@@ -104,22 +105,23 @@ Usage:
     $PROGNAME help
     $PROGNAME version
  
-    $PROGNAME create   --vmid=<string> --label=<string> --path=<string> [--keep=<integer>|--renew=<integer>]
-                          --script=<string> --mail=<string> --unprotect-snap --syslog 
-    $PROGNAME destroy  --vmid=<string> --label=<string> --path=<string> 
-    $PROGNAME enable   --vmid=<string> --label=<string> --path=<string> 
-    $PROGNAME disable  --vmid=<string> --label=<string> --path=<string> 
+    $PROGNAME create     --vmid=<string> --label=<string> --path=<string> [--keep=<integer>|--renew=<integer>]
+                           --script=<string> --mail=<string> --unprotect-snap --syslog 
+    $PROGNAME destroy    --vmid=<string> --label=<string> --path=<string> 
+    $PROGNAME enable     --vmid=<string> --label=<string> --path=<string> 
+    $PROGNAME disable    --vmid=<string> --label=<string> --path=<string> 
 
-    $PROGNAME backup   --vmid=<string> --label=<string> --path=<string> [--keep=<integer>|--renew=<integer>]
-                          --script=<string> --mail=<string> --unprotect-snap --syslog 
-    $PROGNAME restore  --vmid=<string> --label=<string> --path=<string>
-                          --script=<string> --syslog 
+    $PROGNAME backup     --vmid=<string> --label=<string> --path=<string> [--keep=<integer>|--renew=<integer>]
+                           --script=<string> --mail=<string> --unprotect-snap --syslog 
+    $PROGNAME restore    --vmid=<string> --label=<string> --path=<string>
+                           --script=<string> --syslog 
 
-    $PROGNAME status   --vmid=<string> --label=<string> --path=<string>   
-    $PROGNAME clean    --vmid=<string> --label=<string> --path=<string> [--keep=<integer>|--renew=<integer>]
-    $PROGNAME reset    --vmid=<string> --label=<string>   
-    $PROGNAME assemble --vmid=<string> --label=<string> --path=<string>
-                          --script=<string> 
+    $PROGNAME status     --vmid=<string> --label=<string> --path=<string>   
+    $PROGNAME clean      --vmid=<string> --label=<string> --path=<string> [--keep=<integer>|--renew=<integer>]
+    $PROGNAME housekeep  --vmid=<string> [--keep=<integer>|--renew=<integer>]
+    $PROGNAME reset      --vmid=<string> --label=<string>   
+    $PROGNAME assemble   --vmid=<string> --label=<string> --path=<string>
+                           --script=<string> 
 Commands:
     version              Show version program
     help                 Show help program
@@ -919,6 +921,47 @@ function backup(){
     end_process $rc 
 }
 
+function housekeep() {
+    
+    local -i rc=0;
+    local vmname
+
+    parse_opts "$@"
+
+    startts=$(date +%s)
+    log info "ACTION: Housekeep"
+
+    local timestamp; timestamp=$(date +%Y%m%d%H%M%S)
+    log info "Start manual Housekeeping $(date "+%F %T")"
+
+    #create pid file
+#    local pid_file="/var/run/$PROGNAME.pid"
+#    if [[ -e "$pid_file" ]]; then
+#        local pid; pid=$(cat "${pid_file}")
+#        if ps -p "$pid" > /dev/null 2>&1; then
+#          log error "Process already running with pid ${pid}"
+#          end_process 1
+#        fi
+#    fi
+
+#    if ! echo $$ > "$pid_file"; then
+#        log error "Could not create PID file $pid_file"
+#        end_process 1
+#    fi
+
+
+    map_vmids_to_host
+
+
+    for vm_id in $vm_ids; do
+        log info "VM $vm_id - -------- manual Housekeeping -------"#
+        get_path
+        housekeeping
+    done
+
+    exit 0
+}
+
 function get_size_file(){
     echo $(ls -l "$1" | awk '{print $5}')
 }
@@ -928,14 +971,65 @@ function sum_size_file(){
 }
 
 function housekeeping() {
+    log info "Start houskeeping()"
     local image=''
     local keepfile=true
     local imgreached=false
     local factor=86400 #tbd
     local filecount=0
+
+    local file_config; file_config=$(get_config_file)        
+        [ -z "$file_config" ] && continue
+
+    if [[ $opt_retain =~ $retime ]]; then
+        maxage=$((${BASH_REMATCH[1]}*$factor))
+        for disks in $(get_disks_from_config "$file_config"); do
+            log info "Housekeeping for Disk $disk"
+            [[ "$disks" =~ $repool ]]
+            pool=${BASH_REMATCH[1]}
+            disk=${BASH_REMATCH[2]}
+            echo "DEBUG: pool: $pool disk: $disk"
+            list=$(find $path_backup -regex "$path_backup/[0-9]+$pool.$disk.*"|sort -nr)
+            for image in $list; do
+            #for image in $(ls -r $path_backup/*$pool.$disk.{$EXT_DIFF,$EXT_IMAGE}{.zz,.gz,.bz2,} 2>/dev/null); do
+                echo "IMAGE: $image"
+                if [[ "$image" =~ $reimg ]]; then
+                    ext=${BASH_REMATCH[4]}
+                    ts=${BASH_REMATCH[1]}
+                    if [[ $ts =~ $redateex ]]; then
+                        #extract file time
+                        fdate=$((`date --date "${BASH_REMATCH[1]}/${BASH_REMATCH[2]}/${BASH_REMATCH[3]} ${BASH_REMATCH[4]}:${BASH_REMATCH[5]}:${BASH_REMATCH[6]}" +%s`))
+                    else
+                        rc=10
+                        log error "Houskeeping Error"
+                        break;
+                    fi
+                    age=$((`date +"%s"`-$fdate))
+                    echo "DEBUG: $age"
+                    if [[ $age -ge $maxage ]]; then
+                        if [[ ".$ext" == "$EXT_IMAGE" ]]; then
+                            imgreached=true
+                        fi
+                    fi
+                    if ! [[ "$keepfile" == true ]]; then
+                        log info "VM $vm_id - Houskeeping deleting: $image"
+    #                    do_run "rm $image*"
+    #                    do_run "rm $path_backup/$ts.conf"
+                    fi
+                    if [[ "$imgreached" == true ]]; then 
+                        keepfile=false
+                    fi
+                fi
+            done
+        done
+    fi
+
+    exit 0
+
     if [[ $opt_retain =~ $retime ]]; then
         maxage=$((${BASH_REMATCH[1]}*$factor))
         for image in $(ls -r $path_backup/*{$EXT_DIFF,$EXT_IMAGE}{.zz,.gz,.bz2,} 2>/dev/null); do
+            echo "DEBUG: img:$image"
             if [[ "$image" =~ $reimg ]]; then
                 ext=${BASH_REMATCH[4]}
                 ts=${BASH_REMATCH[1]}
@@ -954,8 +1048,8 @@ function housekeeping() {
                 fi
                 if ! [[ "$keepfile" == true ]]; then
                     log info "VM $vm_id - Houskeeping deleting: $image"
-                    do_run "rm $image*"
-                    do_run "rm $path_backup/$ts.conf"
+#                    do_run "rm $image*"
+#                    do_run "rm $path_backup/$ts.conf"
                 fi
                 if [[ "$imgreached" == true ]]; then 
                     keepfile=false
@@ -1426,6 +1520,7 @@ function main(){
         backup) backup "$@";; 
         restore) restore "$@";;       
         clean) clean "$@";;
+        housekeeping) housekeep "$@";;
         status) status "$@";; 
         reset) reset "$@";; 
         assemble) assemble "$@";; 
