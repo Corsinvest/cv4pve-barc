@@ -65,7 +65,7 @@ declare -g endts
 
 declare -r renum='^[0-9]+$'
 declare -r retime='([0-9]+)([d,w])$'
-declare -r reimg='^.*\/([0-9]+)([a-zA-Z0-9_-]+)\.(.*)\.(diff|img).?(.*)?'
+declare -r reimg='^([0-9]+)([a-zA-Z0-9_-]+)\.(.*)\.(diff|img).?(.*)?'
 declare -r redateex='^([0-9]{4})([0-9]{2})([0-9]{2})([0-9]{2})([0-9]{2})([0-9]{2})$'
 
 function map_vmids_to_host(){
@@ -566,7 +566,7 @@ function get_disks_from_config(){
                 echo "$line"
             done < "$file_config" | \
             grep -P '^(?:((?:virtio|ide|scsi|sata|mp|efidisk)\d+)|rootfs): ' | \
-            grep -v -P 'cdrom|none' | \
+            grep -v -P '^(?!.*cloudinit).*media=cdrom.*$' | \
             grep -v -P 'backup=0' | \
             awk '{ split($0,a,","); split(a[1],b," "); print b[2]}')
 
