@@ -1,6 +1,7 @@
 Package: @@PACKAGE@@
 Section: utils
 Version: @@VERSION@@
+Depends: pigz
 Priority: optional
 Architecture: all
 Homepage: http://www.enterpriseve.com/
