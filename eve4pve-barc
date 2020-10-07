@@ -947,10 +947,12 @@ function housekeeping() {
     local factor=86400 #tbd
     local filecount=0
     if [[ $opt_retain =~ $retime ]]; then
+        log debug "Time based housekeeping."
         maxage=$((${BASH_REMATCH[1]}*$factor))
         for image in $(ls -r $path_backup/*{$EXT_DIFF,$EXT_IMAGE}{.zz,.gz,.bz2,} 2>/dev/null); do
             log debug "Image: $image"
-            if [[ "$image" =~ $reimg ]]; then
+            file_base=$(basename "$image")
+            if [[ "$file_base" =~ $reimg ]]; then
                 ext=${BASH_REMATCH[4]}
                 ts=${BASH_REMATCH[1]}
                 if [[ $ts =~ $redateex ]]; then
@@ -977,9 +979,11 @@ function housekeeping() {
             fi
         done
     elif [[ $opt_retain =~ $renum ]]; then
+        log debug "Number based housekeeping."
         for image in $(ls -r $path_backup/*{$EXT_DIFF,$EXT_IMAGE}{.zz,.gz,.bz2,} 2>/dev/null); do
             log debug "Image: $image"
-            if [[ "$image" =~ $reimg ]]; then
+            file_base=$(basename "$image")
+            if [[ "$file_base" =~ $reimg ]]; then
                 filecount=$((filecount+1))
                 ext=${BASH_REMATCH[4]}
                 ts=${BASH_REMATCH[1]}
