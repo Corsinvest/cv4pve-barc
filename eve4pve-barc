@@ -139,7 +139,7 @@ Options:
                          'storage-???' storage Proxmox VE (pool Ceph)
     --label              Is usually 'hourly', 'daily', 'weekly', or 'monthly'
     --path               Path destination backup
-    --keep               Specify the number of differential backup which should will keep, (default: 1)
+    --keep               Specify the number of differential backups which should will keep, (default: 1)
     --renew              Specify how many diffs may accumulate, until a full Backup is issued
                          --renew=10 for keeping 10 Diffs until making a new full export
                          --renew=7d for making diffs up to 7 days, until making a new full export
@@ -1048,7 +1048,7 @@ function merge_diff_backup(){
             export_diff=$(printf %q "$export_diff")
             log debug "*** Export file is: $export_diff"
             
-            # check the export diff exists
+            # check the export diff exists (i.e. make sure we have a valid file path)
             if [[ -f "$export_diff" ]]; then
 			    log debug "$export_diff exists."
 			else
@@ -1122,30 +1122,9 @@ function merge_diff_backup(){
                             do_run "rm $first_diff.*"
                         fi
 
-                        # remove the additional meta data files related to the 2nd diff, as they are no longer correct (e.g. checkums)
-                        #log info "VM $vm_id - Removing second diff backup '$second_diff'"
-                        #if do_run "rm $second_diff" ; then
-                        #    log debug "Removed old diff file."
-                            #do_run "find . -type f -name '$second_diff.*' -delete"
-                        #    do_run "rm $second_diff.*"
-                        #fi
-
                         # rename new merge in second_diff
                         log debug "Renaming merged diff to 2nd diff filename. ($merged_diff to $second_diff)"
                         do_run "mv '$merged_diff' '$second_diff'"
-                        
-                        # recreate files
-                        #if [ "$opt_cksum" == true ]; then
-                       	#    log debug "COMPRESS: $compress, CKEXT: ${ckext[$opt_ckmethod]}"
-                        #    cmd="$compress $merged_diff | tee >($compress > '$second_diff') >(wc -c > $second_diff.${ckext[$opt_ckmethod]}.size) | $opt_ckmethod > $second_diff.${ckext[$opt_ckmethod]}"
-                        #    log debug "Running: $cmd"
-                        #    if ! do_run $cmd ; then
-                        #	    log error "Failed to create checksum files."
-                        #    fi
-                        #fi
-                        
-                        # remove temporary merge_diff file
-                        #do_run "rm '$merged_diff'"
 
                         #remove config
                         local tms_first_diff; tms_first_diff=$(basename "$first_diff" | awk '{print substr($1,1,14)}')
