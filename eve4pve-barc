@@ -4,7 +4,7 @@
 # Author: Daniele Corsini <daniele.corsini@enterpriseve.com>
 #         Bastian Mäuser <bma@netz.org>
 
-declare -r VERSION=0.2.7
+declare -r VERSION=0.2.8
 declare -r NAME=$(basename "$0")
 declare -r PROGNAME=${NAME%.*}
 
@@ -987,9 +987,9 @@ function housekeeping() {
 }
 
 function merge_diff_backup(){
-    
+
     local image=''
-    
+
     # set the de/compression command & extension
     needs_decompress=true
     case "$opt_compress" in
@@ -1043,11 +1043,11 @@ function merge_diff_backup(){
         log debug "for path: $path_backup/"*$suffix_backup_file$EXT_DIFF$cext
         for export_diff in $(ls -r "$path_backup/"*$suffix_backup_file$EXT_DIFF$cext 2>/dev/null); do
             # iterates diff files from oldest to newest
-            
+
             # clean up export file path
             export_diff=$(printf %q "$export_diff")
             log debug "*** Export file is: $export_diff"
-            
+
             # check the export diff exists (i.e. make sure we have a valid file path)
             if [[ -f "$export_diff" ]]; then
 			    log debug "$export_diff exists."
@@ -1055,7 +1055,7 @@ function merge_diff_backup(){
 			    log error "Export file not found. Aborting..."
 			    exit 2
 			fi
-            
+
             # are we at a diff count higher or equal to our 'keep' level?
             if [ "$index" -ge "$opt_keep" ]; then
                 if [ -z "$second_diff" ]; then
@@ -1064,21 +1064,21 @@ function merge_diff_backup(){
                 else
                     first_diff=$(printf %q "$export_diff")
                     merged_diff="$second_diff-merged"
-                    
+
                     # should never happen, but extra safety check
                     if [ -z "$first_diff" ] || [ -z "$second_diff" ]; then
                         # for some reason we're missing a diff file path. This could be dangerous with later rm commands so abort.
                         debug error "One or both diff path/s missing. Aborting!"
                         return 3
                     fi
-                    
+
                     # define initial merge file paths
                     merge_file_1=$first_diff
                     merge_file_2=$second_diff
-                    
+
                     # check if we have files that need decompressing
                     if [ "$needs_decompress" == true ]; then
-                    
+
 	                    # decompress the 1st diff files
 	                    cmd="$decompress $first_diff > $first_diff.raw"
 	                    log debug "Decompressing 1st diff file: $cmd"
@@ -1086,7 +1086,7 @@ function merge_diff_backup(){
 	                        log error "Failed to decompress 1st diff file. Aborting."
 	                        exit 4
 	                    fi
-	                    
+
 	                    # decompress the 2nd diff files
 	                    cmd="$decompress $second_diff > $second_diff.raw"
 	                    log debug "Decompressing 2nd diff file: $cmd"
@@ -1094,27 +1094,26 @@ function merge_diff_backup(){
 	                        log error "Failed to decompress 2nd diff file. Aborting."
 	                        exit 5
 	                    fi
-	                    
+
 	                    # redefine the merge file paths for the later diff merge operation
 	                    merge_file_1=$first_diff.raw
                     	merge_file_2=$second_diff.raw
-	                
 	                fi
 
                     # merge 1st (older) & 2nd (more recent) diffs into a new diff file with a filename based on newer 2nd diff
                     # we also create the checksum & size meta data files at this time, writing over the old ones
                     log info "VM $vm_id - Merge diff backup '$(basename "$first_diff")' '$(basename "$second_diff")' to '$(basename "$merged_diff")'"
                     if do_run "rbd merge-diff $merge_file_1 $merge_file_2 - | tee >($compress > $merged_diff) >(wc -c > $second_diff.${ckext[$opt_ckmethod]}.size) | $opt_ckmethod > $second_diff.${ckext[$opt_ckmethod]}" ; then
-                        
+
                         #ok result
-                        
+
                         if [ "$needs_decompress" == true ]; then
 	                        # remove the temporary decompressed diff files
 	                        if ! do_run "rm $first_diff.raw $second_diff.raw" ; then
 	                            log error "Failed to remove temporary diff files."
 	                        fi
 	                    fi
-	                    
+
 	                    # clean up the 1st diff files that we no longer need, as it's merged into the 2nd diff
 	                    log info "VM $vm_id - Removing first diff backup '$first_diff'";
                         if do_run "rm $first_diff" ; then
@@ -1141,7 +1140,7 @@ function merge_diff_backup(){
                         #Error
                         log error "VM $vm_id - Merge diff backup '$(basename $first_diff)' '$(basename $second_diff)' to '$(basename "$merged_diff")'"
                         do_run "rm -f $merged_diff"
-                        
+
                         if [ "$needs_decompress" == true ]; then
 	                        # remove the temporary decompressed diff files
 	                        do_run "rm $first_diff.raw $second_diff.raw"

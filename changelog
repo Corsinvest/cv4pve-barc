@@ -1,3 +1,9 @@
+eve4pve-barc (0.2.8)
+
+  * Fix backup & restore checksum issues with keep & renew #74
+
+ -- EnterpriseVE Support Team <support@enterpriseve.com>  7 Oct 2019 09:12:00 +0100
+
 eve4pve-barc (0.2.7)
 
   * fix #68 #73

@@ -59,12 +59,12 @@ Commands:
 
 Options:
     --vmid               The ID of the VM/CT, comma separated (es. 100,101,102),
-                         'all-???' for all known guest systems in specific host (es. all-pve1, all-$(hostname)),
+                         'all-???' for all known guest systems in specific host (es. all-pve1, all-\$(hostname)),
                          'all' for all known guest systems in cluster,
                          'storage-???' storage Proxmox VE (pool Ceph)
     --label              Is usually 'hourly', 'daily', 'weekly', or 'monthly'
     --path               Path destination backup
-    --keep               Specify the number of backup which should will keep, Default 1 (can't be used with --renew)
+    --keep               Specify the number of differential backups which should will keep, (default: 1)
     --renew              Specify how many diffs may accumulate, until a full Backup is issued
                          --renew=10 for keeping 10 Diffs until making a new full export
                          --renew=7d for making diffs up to 7 days, until making a new full export
@@ -72,12 +72,13 @@ Options:
                          --retain=30d to keep Backups for 30 days. If the Point in time matches a diff,
                          it keeps all previous diffs up to the preceding full image to ensure possibility to restore data
     --cksum              Store checksums for snapshot validation (default: true)
+    --ckmethod           Method used for Checksumming [m5sum, sha1sum, sha224sum, sha384sum, sha512sum] (default: sha1sum)
     --qemu-freeze        Issue fsfreeze-freeze prio snapshotting and fsfreeze-thaw after snapshot completion (default: true)
     --iothreads          Specify number of IO threads for exporting (default: 10)
     --compress           Specify compression method [none,gzip,bzip2,pigz] (default: none)
-    --compressthreads    Specify compression threads for pigz (default: 1)
+    --compressthreads    Specify compression threads for pigz (default: 2)
     --script             Use specified hook script
-                         E.g. /usr/share/doc/eve4pve-barc/examples/script-hook.sh
+                         E.g. /usr/share/doc/$PROGNAME/examples/script-hook.sh
     --syslog             Write messages into the system log
     --mail               Email addresses send log backup, comma separated (es. info@domain.ltd,info1@domain.ltd)
     --unprotect-snap     Disable protection snapshot, default is protected.
