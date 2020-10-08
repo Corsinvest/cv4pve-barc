@@ -241,8 +241,7 @@ function parse_opts(){
     local args
     args=$(getopt \
            --options '' \
-           --longoptions=path:,vmid:,label:,keep:,renew:,retain:,cksum:,ckmethod:,iothreads:,compress:,compressthreads:,mail: \
-           --longoptions=script:,syslog,debug,dry-run,unprotect-snap,qemu-freeze \
+           --longoptions=path:,vmid:,label:,keep:,renew:,retain:,cksum:,ckmethod:,iothreads:,compress:,compressthreads:,mail:,script:,syslog,debug,dry-run,unprotect-snap,qemu-freeze \
            --name "$PROGNAME" \
            -- "$@") \
            || end_process 128
@@ -727,14 +726,6 @@ function backup(){
                 fi
                 export_type[$export_idx]="image"
             else
-                if [ "$renew" == true ]; then
-                    log info "VM $vm_id - Renew policy requires full run for $disk" 
-                    backup_file="$backup_file$EXT_IMAGE"
-                else
-                    log info "VM $vm_id - Renew policy tolerates incremental run for $disk" 
-                    backup_file="$backup_file$EXT_DIFF"
-                fi
-
                 #Snapshot Housekeeping..                
                 #find last snapshot in ceph
                 latest_snap=$(rbd snap ls "$image_spec" | \
@@ -780,7 +771,6 @@ function backup(){
                     break;
                 fi
 
-                export_latest_snap[$export_idx]="$latest_snap"
                 if [ "$renew" == true ]; then
                     log info "VM $vm_id - Renew policy requires full run for $disk" 
                     backup_file="$backup_file$EXT_IMAGE"
