@@ -743,10 +743,11 @@ function backup(){
 
                 #not exist snapshot on rbd
                 if [ -z "$latest_snap" ]; then
-                    log error "VM $vm_id - Ceph last snapshot '$image_spec' not found!";                    
-                    call_hook_script "export-diff-abort" "-" "-"                 
-                    rc=30                         
-                    break;
+                    log warn "VM $vm_id - Ceph last snapshot '$image_spec' not found! Running Full";                    
+                    renew=true
+                    #call_hook_script "export-diff-abort" "-" "-"                 
+                    #rc=30                         
+                    #break;
                 fi
 
                 #verify exist last snapshot ceph in file backup
@@ -781,10 +782,16 @@ function backup(){
 
                 export_latest_snap[$export_idx]="$latest_snap"
                 if [ "$renew" == true ]; then
+                    log info "VM $vm_id - Renew policy requires full run for $disk" 
+                    backup_file="$backup_file$EXT_IMAGE"
                     export_type[$export_idx]="image"
                 else
+                    log info "VM $vm_id - Renew policy tolerates incremental run for $disk" 
+                    backup_file="$backup_file$EXT_DIFF"
                     export_type[$export_idx]="diff"
                 fi
+
+                export_latest_snap[$export_idx]="$latest_snap"
             fi
             snapshotok=$((snapshotok+1))             
 
