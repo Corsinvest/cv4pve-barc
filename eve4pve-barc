@@ -605,6 +605,7 @@ function backup(){
     map_vmids_to_host
 
     for vm_id in $vm_ids; do
+        log debug "Backing up VMID: $vm_id"
         vmtotal=$((vmtotal+1))
         local file_config; file_config=$(get_config_file)
         [ -z "$file_config" ] && continue
@@ -642,6 +643,7 @@ function backup(){
         #loop disk create snapshot
         local disk=''
         for disk in $(get_disks_from_config "$file_config"); do
+            log debug "Working on disk $disk"
             snapshottotal=$((snapshottotal+1))
             #check rbd device image-spec is pool-name/image-name
             image_spec=$(get_image_spec "$disk")
@@ -663,21 +665,31 @@ function backup(){
             local diffcount=0
             local renew=false
             #count mode (accumulate diff's until they exceed a given number --renew=X)
+            log debug "opt_renew: $opt_renew"
             if [[ $opt_renew =~ $renum ]]; then
+                log debug "Iterating backup files..."
                 for backup_files_present in $(ls -r $path_backup/*$suffix_backup_file{$EXT_DIFF,$EXT_IMAGE}{.zz,.gz,.bz2,} 2>/dev/null); do
-                    if [[ "$backup_files_present" =~ $reimg ]]; then
+                    log debug "backup_files_present is: $backup_files_present"
+                    file_base=$(basename "$backup_files_present")
+                    log debug "file_base: $file_base"
+                    if [[ "$file_base" =~ $reimg ]]; then
+                        log "Image file found."
                         ext=${BASH_REMATCH[4]}
                         if [ "$ext" == 'diff' ]; then
+                            log debug ".diff extension found. Incrementing diff count."
                             diffcount=$((diffcount+1))
                         elif [ "$ext" == 'img' ] && [ "$opt_renew" -gt 0 ]; then
+                            log debug ".img extension found & opt_renew is greater than 0. Setting renew to false."
                             renew=false
                             break;
                         else
+                            log debug "Not a .diff file, or not a .img file with opt_renew greater than 0. Setting renew to true."
                             renew=true
                             break;
                         fi
                     fi
                     if [ "$diffcount" -ge "$opt_renew" ]; then
+                        log debug "Diff count is greater than opt_renew. Setting renew to true."
                         renew=true
                         break;
                     fi
@@ -687,7 +699,10 @@ function backup(){
                 local factor=86400    #tbd: support d, w, m
                 maxage=$((${BASH_REMATCH[1]}*$factor))
                 for backup_files_present in $(ls -r $path_backup/*$suffix_backup_file{$EXT_DIFF,$EXT_IMAGE}{.zz,.gz,.bz2,} 2>/dev/null); do
-                    if [[ "$backup_files_present" =~ $reimg ]]; then
+                    log debug "backup_files_present is: $backup_files_present"
+                    file_base=$(basename "$backup_files_present")
+                    log debug "file_base: $file_base"
+                    if [[ "$file_base" =~ $reimg ]]; then
                         ext=${BASH_REMATCH[4]}
                         ts=${BASH_REMATCH[1]}
                         if [[ $ts =~ $redateex ]]; then
@@ -932,10 +947,12 @@ function housekeeping() {
     local factor=86400 #tbd
     local filecount=0
     if [[ $opt_retain =~ $retime ]]; then
+        log debug "Time based housekeeping."
         maxage=$((${BASH_REMATCH[1]}*$factor))
         for image in $(ls -r $path_backup/*{$EXT_DIFF,$EXT_IMAGE}{.zz,.gz,.bz2,} 2>/dev/null); do
             log debug "Image: $image"
-            if [[ "$image" =~ $reimg ]]; then
+            file_base=$(basename "$image")
+            if [[ "$file_base" =~ $reimg ]]; then
                 ext=${BASH_REMATCH[4]}
                 ts=${BASH_REMATCH[1]}
                 if [[ $ts =~ $redateex ]]; then
@@ -962,9 +979,11 @@ function housekeeping() {
             fi
         done
     elif [[ $opt_retain =~ $renum ]]; then
+        log debug "Number based housekeeping."
         for image in $(ls -r $path_backup/*{$EXT_DIFF,$EXT_IMAGE}{.zz,.gz,.bz2,} 2>/dev/null); do
             log debug "Image: $image"
-            if [[ "$image" =~ $reimg ]]; then
+            file_base=$(basename "$image")
+            if [[ "$file_base" =~ $reimg ]]; then
                 filecount=$((filecount+1))
                 ext=${BASH_REMATCH[4]}
                 ts=${BASH_REMATCH[1]}
