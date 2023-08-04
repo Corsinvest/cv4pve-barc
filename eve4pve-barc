@@ -568,7 +568,7 @@ function get_disks_from_config(){
                 [[ "$line" == "" ]] && break
                 echo "$line" 
             done < "$file_config" | \
-            grep -P '^(?:((?:virtio|ide|scsi|sata|mp)\d+)|rootfs): ' | \
+            grep -P '^(?:((?:efidisk|virtio|ide|scsi|sata|mp)\d+)|rootfs): ' | \
             grep -v -P 'cdrom|none' | \
             grep -v -P 'backup=0' | \
             awk '{ split($0,a,","); split(a[1],b," "); print b[2]}')
